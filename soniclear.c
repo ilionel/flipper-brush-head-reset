@@ -45,6 +45,7 @@ typedef enum {
 } SoniclearAdvItem;
 
 typedef enum {
+    SoniclearScreenConfirm, // confirm a write before placing the head
     SoniclearScreenScanning, // talking to the tag
     SoniclearScreenResult, // NFC outcome
     SoniclearScreenPwdCalc, // manual password calculator result
@@ -62,6 +63,8 @@ typedef struct {
     SoniclearScreen screen;
     SoniclearOp op;
     uint16_t write_seconds; // for write ops (drawing the target)
+    uint16_t confirm_seconds; // pending write target (confirm screen)
+    char confirm_title[20]; // pending write label (confirm screen)
     bool saved; // report saved to SD
     SoniclearResult res;
     // password calculator inputs/result
@@ -89,6 +92,7 @@ typedef struct {
     SoniclearOp op;
     uint16_t write_seconds;
     bool save_after_read; // menu "Save": auto-save the read record
+    uint16_t pending_seconds; // write target awaiting confirmation
     bool usage_by_percent; // Set usage: true = % entry, false = minutes entry
     // password calculator scratch
     uint8_t calc_uid[7];
@@ -102,6 +106,20 @@ static void soniclear_draw_spinner(Canvas* canvas, uint8_t x, uint8_t y, uint8_t
     canvas_draw_str(canvas, x, y, f[frame & 3]);
 }
 
+// Horizontal usage gauge: an outlined bar filled proportionally to `pct` (0-100).
+static void soniclear_draw_bar(Canvas* canvas, int x, int y, int w, int h, unsigned pct) {
+    if(pct > 100) pct = 100;
+    canvas_draw_frame(canvas, x, y, w, h);
+    int fill = ((w - 2) * (int)pct) / 100;
+    if(fill > 0) canvas_draw_box(canvas, x + 1, y + 1, fill, h - 2);
+}
+
+// Seconds -> percent of rated life (capped at 100).
+static unsigned soniclear_pct(uint16_t seconds) {
+    unsigned p = (100u * seconds) / SONICLEAR_LIFE_SECONDS;
+    return p > 100u ? 100u : p;
+}
+
 static void soniclear_work_draw(Canvas* canvas, void* model) {
     SoniclearWorkModel* m = model;
     canvas_clear(canvas);
@@ -111,10 +129,10 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
     if(m->screen == SoniclearScreenAbout) {
         canvas_draw_str(canvas, 2, 11, "Brush Head Reset");
         canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str(canvas, 2, 24, "NTAG213 wear-counter");
-        canvas_draw_str(canvas, 2, 34, "tool for your own");
-        canvas_draw_str(canvas, 2, 44, "brush heads.");
-        canvas_draw_str(canvas, 2, 54, "Independent project.");
+        canvas_draw_str(canvas, 2, 23, "v" SONICLEAR_VERSION "  NTAG213 wear");
+        canvas_draw_str(canvas, 2, 33, "counter tool for your");
+        canvas_draw_str(canvas, 2, 43, "own brush heads.");
+        canvas_draw_str(canvas, 2, 53, "Independent project.");
         canvas_draw_str(canvas, 110, 63, "Back");
         return;
     }
@@ -151,6 +169,27 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
         return;
     }
 
+    if(m->screen == SoniclearScreenConfirm) {
+        canvas_draw_str(canvas, 2, 12, m->confirm_title);
+        canvas_set_font(canvas, FontSecondary);
+        if(m->confirm_seconds == 0) {
+            canvas_draw_str(canvas, 2, 26, "New counter: 0% (fresh)");
+        } else {
+            snprintf(
+                line,
+                sizeof(line),
+                "New counter: %u%% (%umin)",
+                soniclear_pct(m->confirm_seconds),
+                m->confirm_seconds / 60u);
+            canvas_draw_str(canvas, 2, 26, line);
+        }
+        canvas_draw_str(canvas, 2, 38, "Place head flat, hold");
+        canvas_draw_str(canvas, 2, 48, "still. One auth attempt.");
+        canvas_draw_str(canvas, 2, 62, "OK: write");
+        canvas_draw_str(canvas, 100, 62, "Back");
+        return;
+    }
+
     if(m->screen == SoniclearScreenScanning) {
         canvas_draw_str(canvas, 2, 11, m->op == SoniclearOpWrite ? "Writing head" : "Reading head");
         canvas_set_font(canvas, FontSecondary);
@@ -179,30 +218,37 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
         return;
     }
 
-    snprintf(line, sizeof(line), "Model: %s", r->mfg);
-    canvas_draw_str(canvas, 2, 22, line);
-    unsigned pct = (100u * r->seconds) / SONICLEAR_LIFE_SECONDS;
-    snprintf(line, sizeof(line), "Used: %u%%  (%u min)", pct, r->seconds / 60u);
-    canvas_draw_str(canvas, 2, 32, line);
+    unsigned pct = soniclear_pct(r->seconds);
+    snprintf(line, sizeof(line), "%s  %u min", r->mfg, r->seconds / 60u);
+    canvas_draw_str(canvas, 2, 21, line);
+    // usage gauge with the percentage printed at the right
+    soniclear_draw_bar(canvas, 2, 25, 100, 7, pct);
+    snprintf(line, sizeof(line), "%u%%", pct);
+    canvas_draw_str(canvas, 107, 32, line);
     snprintf(
-        line, sizeof(line), "PWD: %02X%02X%02X%02X", r->pwd[0], r->pwd[1], r->pwd[2], r->pwd[3]);
-    canvas_draw_str(canvas, 2, 42, line);
+        line, sizeof(line), "PWD %02X%02X%02X%02X", r->pwd[0], r->pwd[1], r->pwd[2], r->pwd[3]);
+    canvas_draw_str(canvas, 2, 44, line);
 
     if(m->op == SoniclearOpWrite) {
         const char* st;
+        const char* hint = NULL;
         if(r->verify_ok) {
-            st = (m->write_seconds == 0) ? "RESET OK -> 0%" : "Set OK";
+            st = (m->write_seconds == 0) ? "Reset OK -> 0%" : "Write OK";
         } else if(r->write_ok) {
-            st = "Written (verify?)";
+            st = "Written, verify failed";
+            hint = "Re-read to check";
         } else if(r->auth_ok) {
             st = "Write failed";
+            hint = "Hold still, retry";
         } else {
             st = "Auth failed";
+            hint = "Hold still, retry";
         }
-        canvas_draw_str(canvas, 2, 54, st);
+        canvas_draw_str(canvas, 2, 55, st);
+        if(hint) canvas_draw_str(canvas, 2, 63, hint);
         canvas_draw_str(canvas, 104, 63, "Back");
     } else {
-        canvas_draw_str(canvas, 2, 54, m->saved ? "Saved to SD" : "OK: save");
+        canvas_draw_str(canvas, 2, 55, m->saved ? "Saved to SD" : "OK: save to SD");
         canvas_draw_str(canvas, 104, 63, "Back");
     }
 }
@@ -264,7 +310,10 @@ static bool soniclear_parse_seconds(SoniclearApp* app, const char* path, uint16_
         buf[n] = '\0';
         char* p = strstr(buf, "Seconds:");
         if(p) {
-            *out = (uint16_t)atoi(p + 8);
+            int v = atoi(p + 8);
+            if(v < 0) v = 0;
+            if(v > 65535) v = 65535;
+            *out = (uint16_t)v;
             ok = true;
         }
     }
@@ -303,6 +352,26 @@ static void soniclear_start_scan(SoniclearApp* app, SoniclearOp op, uint16_t wri
     view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewWork);
     soniclear_poller_start(app->poller, op, write_seconds, &app->result, soniclear_on_done, app);
     furi_timer_start(app->timer, furi_ms_to_ticks(150));
+}
+
+// Stage a write and show a confirmation screen before any tag is touched. The user
+// then places the head once and presses OK -> a single read+auth+write session runs.
+// Confirming up front (not between read and write) avoids re-positioning the head.
+static void soniclear_confirm_write(SoniclearApp* app, uint16_t seconds, const char* title) {
+    app->pending_seconds = seconds;
+    app->save_after_read = false;
+    with_view_model(
+        app->work,
+        SoniclearWorkModel * m,
+        {
+            m->screen = SoniclearScreenConfirm;
+            m->op = SoniclearOpWrite;
+            m->confirm_seconds = seconds;
+            strncpy(m->confirm_title, title, sizeof(m->confirm_title) - 1);
+            m->confirm_title[sizeof(m->confirm_title) - 1] = '\0';
+        },
+        true);
+    view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewWork);
 }
 
 static bool soniclear_custom_event_cb(void* context, uint32_t event) {
@@ -345,10 +414,8 @@ static void soniclear_number_done(void* context, int32_t number) {
                     number * 60; // minutes -> seconds
     if(s < 0) s = 0;
     if(s > 65535) s = 65535;
-    // Single placement: read identity (gets pwd) -> auth -> write, all in one field
-    // session. The poller only authenticates after a valid read, with the computed
-    // password, exactly once -> the 3-attempt lockout can never be reached.
-    soniclear_start_scan(app, SoniclearOpWrite, (uint16_t)s);
+    // Confirm, then a single read -> auth -> write session (see soniclear_confirm_write).
+    soniclear_confirm_write(app, (uint16_t)s, "Set usage");
 }
 
 /* --------------------------------- password calc ---------------------------- */
@@ -399,7 +466,7 @@ static void soniclear_handle_restore(SoniclearApp* app) {
     uint16_t seconds = 0;
     if(dialog_file_browser_show(app->dialogs, path, path, &opts) &&
        soniclear_parse_seconds(app, furi_string_get_cstr(path), &seconds)) {
-        soniclear_start_scan(app, SoniclearOpWrite, seconds);
+        soniclear_confirm_write(app, seconds, "Restore");
     }
     furi_string_free(path);
 }
@@ -429,11 +496,18 @@ static bool soniclear_work_input(InputEvent* event, void* context) {
         view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewSubmenu);
         return true;
     }
-    if(event->key == InputKeyOk && screen == SoniclearScreenResult && valid_read) {
-        // a plain Read result: OK saves the record to SD
-        soniclear_save_record(app, &app->result);
-        with_view_model(app->work, SoniclearWorkModel * m, { m->saved = true; }, true);
-        return true;
+    if(event->key == InputKeyOk) {
+        if(screen == SoniclearScreenConfirm) {
+            // user confirmed -> start the single read+auth+write session
+            soniclear_start_scan(app, SoniclearOpWrite, app->pending_seconds);
+            return true;
+        }
+        if(screen == SoniclearScreenResult && valid_read) {
+            // a plain Read result: OK saves the record to SD
+            soniclear_save_record(app, &app->result);
+            with_view_model(app->work, SoniclearWorkModel * m, { m->saved = true; }, true);
+            return true;
+        }
     }
     return false;
 }
@@ -446,9 +520,7 @@ static void soniclear_submenu_cb(void* context, uint32_t index) {
         soniclear_start_scan(app, SoniclearOpRead, 0);
         break;
     case SoniclearMenuReset:
-        // Single placement: read -> auth -> write 0 (one field session, one auth)
-        app->save_after_read = false;
-        soniclear_start_scan(app, SoniclearOpWrite, 0);
+        soniclear_confirm_write(app, 0, "Reset to new");
         break;
     case SoniclearMenuSave:
         app->save_after_read = true; // read, then auto-save the record

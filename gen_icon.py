@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
-"""Generate the 10x10 1-bit app icon (a tooth).
+"""Generate the 10x10 1-bit app icon (a molar tooth).
 
 Flipper renders black pixels (0) as lit. Run: python3 gen_icon.py
 """
 from PIL import Image
 
-# 10x10 tooth: rounded crown on top, two roots splitting at the bottom.
+# 10x10 molar: two cusps on top, a solid body, and two short roots with a
+# notch at the bottom. The bumpy crown + dominant body avoid the "bridge" look
+# that straight-sided two-legged shapes give.
 # 1 = ink (black/lit), 0 = background.
 TOOTH = [
-    "0011111100",  # crown top (rounded)
+    "0111001110",  # two cusps (crown)
     "0111111110",
-    "1111111111",
-    "1111111111",
-    "1111111111",
-    "1111111111",
-    "1111111111",
-    "1111001111",  # roots begin to split
-    "1110000111",
-    "1100000011",  # two pointed roots
+    "0111111110",
+    "0111111110",
+    "0111111110",
+    "0111111110",
+    "0111111110",
+    "0111111110",
+    "0110000110",  # roots split
+    "0100000010",
 ]
 
 img = Image.new("1", (10, 10), 1)  # white background
@@ -27,4 +29,4 @@ for y, row in enumerate(TOOTH):
         if c == "1":
             px[x, y] = 0  # ink
 img.save("icon.png")
-print("wrote icon.png (10x10, 1-bit tooth)")
+print("wrote icon.png (10x10, 1-bit molar tooth)")
