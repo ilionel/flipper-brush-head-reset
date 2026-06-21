@@ -493,8 +493,13 @@ static void soniclear_text_input_done(void* context);
 
 static void soniclear_byte_input_done(void* context) {
     SoniclearApp* app = context;
-    // got UID -> ask for MFG, then compute the password
-    memset(app->calc_mfg, 0, sizeof(app->calc_mfg));
+    // got UID -> ask for MFG (prefilled from the last valid read), then compute
+    if(app->result.valid && app->result.mfg[0]) {
+        strncpy(app->calc_mfg, app->result.mfg, sizeof(app->calc_mfg) - 1);
+        app->calc_mfg[sizeof(app->calc_mfg) - 1] = '\0';
+    } else {
+        memset(app->calc_mfg, 0, sizeof(app->calc_mfg));
+    }
     text_input_set_header_text(app->text_input, "MFG (e.g. 250625 51T)");
     text_input_set_result_callback(
         app->text_input,
@@ -637,7 +642,12 @@ static void soniclear_advanced_cb(void* context, uint32_t index) {
         view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewNumber);
         break;
     case SoniclearAdvPwdCalc:
-        memset(app->calc_uid, 0, sizeof(app->calc_uid));
+        // prefill the UID from the last read (incl. unknown-layout tags) for convenience
+        if(app->result.present) {
+            memcpy(app->calc_uid, app->result.uid, sizeof(app->calc_uid));
+        } else {
+            memset(app->calc_uid, 0, sizeof(app->calc_uid));
+        }
         byte_input_set_header_text(app->byte_input, "Tag UID (7 bytes)");
         byte_input_set_result_callback(
             app->byte_input, soniclear_byte_input_done, NULL, app, app->calc_uid, 7);
