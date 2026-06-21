@@ -64,6 +64,8 @@ typedef struct {
     SonicareOp op;
     uint16_t write_seconds; // for write ops (drawing the target)
     bool saved; // report saved to SD
+    bool armed_write; // read result is armed: OK commits the pending write
+    uint16_t target_seconds; // pending write target (for the armed prompt)
     SonicareResult res;
     // password calculator inputs/result
     uint8_t calc_uid[7];
@@ -90,6 +92,8 @@ typedef struct {
     SonicareOp op;
     uint16_t write_seconds;
     bool save_after_read; // menu "Save": auto-save the read record
+    bool pending_write; // a write is staged: read first, then confirm
+    uint16_t pending_seconds; // staged write target
     bool usage_by_percent; // Set usage: true = % entry, false = minutes entry
     // password calculator scratch
     uint8_t calc_uid[7];
@@ -151,16 +155,6 @@ static void sonicare_work_draw(Canvas* canvas, void* model) {
         return;
     }
 
-    if(m->screen == SonicareScreenConfirm) {
-        canvas_draw_str(canvas, 2, 11, "Reset to new");
-        canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str(canvas, 2, 26, "Sets wear counter to 0%.");
-        canvas_draw_str(canvas, 2, 36, "Password is computed");
-        canvas_draw_str(canvas, 2, 46, "(safe, single auth).");
-        canvas_draw_str(canvas, 2, 63, "OK: scan & reset   Back");
-        return;
-    }
-
     if(m->screen == SonicareScreenScanning) {
         canvas_draw_str(canvas, 2, 11, m->op == SonicareOpWrite ? "Write head" : "Read head");
         canvas_set_font(canvas, FontSecondary);
@@ -209,10 +203,21 @@ static void sonicare_work_draw(Canvas* canvas, void* model) {
             st = "Auth failed";
         }
         canvas_draw_str(canvas, 2, 54, st);
+        canvas_draw_str(canvas, 104, 63, "Back");
+    } else if(m->armed_write) {
+        // read confirmed -> OK commits the staged write
+        unsigned tp = (100u * m->target_seconds) / SONICARE_LIFE_SECONDS;
+        if(m->target_seconds == 0) {
+            snprintf(line, sizeof(line), "OK: reset -> 0%%");
+        } else {
+            snprintf(line, sizeof(line), "OK: set -> %u%%", tp);
+        }
+        canvas_draw_str(canvas, 2, 54, line);
+        canvas_draw_str(canvas, 104, 63, "Back");
     } else {
         canvas_draw_str(canvas, 2, 54, m->saved ? "Saved to SD" : "OK: save");
+        canvas_draw_str(canvas, 104, 63, "Back");
     }
-    canvas_draw_str(canvas, 104, 63, "Back");
 }
 
 /* --------------------------------- save / restore --------------------------- */
@@ -304,6 +309,7 @@ static void sonicare_start_scan(SonicareApp* app, SonicareOp op, uint16_t write_
             m->op = op;
             m->write_seconds = write_seconds;
             m->saved = false;
+            m->armed_write = false;
             m->anim = 0;
             memset(&m->res, 0, sizeof(m->res));
         },
@@ -325,8 +331,13 @@ static bool sonicare_custom_event_cb(void* context, uint32_t event) {
                 (app->op == SonicareOpRead || (r->did_write && r->verify_ok));
     notification_message(app->notifications, good ? &sequence_success : &sequence_error);
 
+    // 2-step write: a read that confirms a valid head arms the staged write
+    bool armed = app->pending_write && app->op == SonicareOpRead && r->present && r->valid;
+    uint16_t target = app->pending_seconds;
+    if(!armed) app->pending_write = false; // read failed/invalid, or this was the write pass
+
     bool saved = false;
-    if(app->save_after_read && r->present && r->valid) {
+    if(app->save_after_read && r->present && r->valid && !armed) {
         sonicare_save_record(app, r);
         saved = true;
     }
@@ -339,6 +350,8 @@ static bool sonicare_custom_event_cb(void* context, uint32_t event) {
             m->screen = SonicareScreenResult;
             m->res = *r;
             m->saved = saved;
+            m->armed_write = armed;
+            m->target_seconds = target;
         },
         true);
     return true;
@@ -353,7 +366,10 @@ static void sonicare_number_done(void* context, int32_t number) {
                     number * 60; // minutes -> seconds
     if(s < 0) s = 0;
     if(s > 65535) s = 65535;
-    sonicare_start_scan(app, SonicareOpWrite, (uint16_t)s);
+    // 2-step: read & confirm first, then OK commits the write
+    app->pending_write = true;
+    app->pending_seconds = (uint16_t)s;
+    sonicare_start_scan(app, SonicareOpRead, 0);
 }
 
 /* --------------------------------- password calc ---------------------------- */
@@ -404,7 +420,10 @@ static void sonicare_handle_restore(SonicareApp* app) {
     uint16_t seconds = 0;
     if(dialog_file_browser_show(app->dialogs, path, path, &opts) &&
        sonicare_parse_seconds(app, furi_string_get_cstr(path), &seconds)) {
-        sonicare_start_scan(app, SonicareOpWrite, seconds);
+        // 2-step: read & confirm, then OK commits the write
+        app->pending_write = true;
+        app->pending_seconds = seconds;
+        sonicare_start_scan(app, SonicareOpRead, 0);
     }
     furi_string_free(path);
 }
@@ -416,13 +435,16 @@ static bool sonicare_work_input(InputEvent* event, void* context) {
     if(event->type != InputTypeShort) return false;
 
     SonicareScreen screen = SonicareScreenResult;
+    bool armed = false;
     bool valid_read = false;
     with_view_model(
         app->work,
         SonicareWorkModel * m,
         {
             screen = m->screen;
-            valid_read = (m->op == SonicareOpRead) && m->res.present && m->res.valid && !m->saved;
+            armed = m->armed_write;
+            valid_read = (m->op == SonicareOpRead) && m->res.present && m->res.valid &&
+                         !m->armed_write && !m->saved;
         },
         false);
 
@@ -431,15 +453,19 @@ static bool sonicare_work_input(InputEvent* event, void* context) {
             furi_timer_stop(app->timer);
             sonicare_poller_stop(app->poller);
         }
+        app->pending_write = false; // cancel any staged write
         view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewSubmenu);
         return true;
     }
-    if(event->key == InputKeyOk) {
-        if(screen == SonicareScreenConfirm) {
-            sonicare_start_scan(app, SonicareOpWrite, 0);
+    if(event->key == InputKeyOk && screen == SonicareScreenResult) {
+        if(armed) {
+            // commit the staged write (single auth, password already shown/confirmed)
+            uint16_t seconds = app->pending_seconds;
+            app->pending_write = false;
+            sonicare_start_scan(app, SonicareOpWrite, seconds);
             return true;
         }
-        if(screen == SonicareScreenResult && valid_read) {
+        if(valid_read) {
             sonicare_save_record(app, &app->result);
             with_view_model(app->work, SonicareWorkModel * m, { m->saved = true; }, true);
             return true;
@@ -453,22 +479,19 @@ static void sonicare_submenu_cb(void* context, uint32_t index) {
     switch(index) {
     case SonicareMenuRead:
         app->save_after_read = false;
+        app->pending_write = false;
         sonicare_start_scan(app, SonicareOpRead, 0);
         break;
     case SonicareMenuReset:
-        with_view_model(
-            app->work,
-            SonicareWorkModel * m,
-            {
-                m->screen = SonicareScreenConfirm;
-                m->op = SonicareOpWrite;
-                m->write_seconds = 0;
-            },
-            true);
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewWork);
+        // 2-step: read & confirm the head, then OK commits the reset (single auth)
+        app->save_after_read = false;
+        app->pending_write = true;
+        app->pending_seconds = 0;
+        sonicare_start_scan(app, SonicareOpRead, 0);
         break;
     case SonicareMenuSave:
         app->save_after_read = true; // read, then auto-save the record
+        app->pending_write = false;
         sonicare_start_scan(app, SonicareOpRead, 0);
         break;
     case SonicareMenuRestore:
