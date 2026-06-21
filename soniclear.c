@@ -194,11 +194,23 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
     if(m->screen == SoniclearScreenScanning) {
         canvas_draw_str(canvas, 2, 11, m->op == SoniclearOpWrite ? "Writing head" : "Reading head");
         canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str(canvas, 2, 28, "Brush base flat on the");
-        canvas_draw_str(canvas, 2, 38, "Flipper back. Hold");
-        canvas_draw_str(canvas, 2, 48, "still until done.");
-        soniclear_draw_spinner(canvas, 118, 33, m->anim);
-        canvas_draw_str(canvas, 2, 63, "Back: cancel");
+        canvas_draw_str(canvas, 2, 26, "Brush base flat on");
+        canvas_draw_str(canvas, 2, 36, "Flipper, hold still.");
+        if(m->op == SoniclearOpWrite) {
+            if(m->write_seconds == 0) {
+                canvas_draw_str(canvas, 2, 48, "Target: 0% (fresh)");
+            } else {
+                snprintf(
+                    line,
+                    sizeof(line),
+                    "Target: %u%% (%umin)",
+                    soniclear_pct(m->write_seconds),
+                    m->write_seconds / 60u);
+                canvas_draw_str(canvas, 2, 48, line);
+            }
+        }
+        soniclear_draw_spinner(canvas, 118, 31, m->anim);
+        canvas_draw_str(canvas, 2, 62, "Back: cancel");
         return;
     }
 

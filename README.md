@@ -93,6 +93,21 @@ python3 soniclear.py --uid 0436F47A141F90 --mfg "250625 51T"
    especially for a write. If a read works but a write says "Auth failed", it's a
    coupling glitch: reposition and try again (the password is correct by construction).
 
+## Safety against permanent lockout
+
+The tag is configured with `AUTHLIM = 3`: after **3 consecutive failed**
+`PWD_AUTH` attempts it locks protected memory **permanently**. A *successful*
+auth resets that counter. This app is built so the limit is never reachable:
+
+- The password is **computed** from the head (UID + MFG), never guessed.
+- A write authenticates **once**. A transport error (timeout / lost coupling)
+  never reaches the tag, so it does not count toward the limit — only these are
+  retried automatically. A genuine *key rejection* (the tag answered "no") is
+  **never** retried.
+- So in normal use you will see at most coupling retries ("No tag answer"),
+  which are harmless. "Password rejected" should never appear on a supported
+  head; if it does, stop and check the UID/MFG rather than retrying blindly.
+
 ## Disclaimer
 
 Provided "as is", for personal use on hardware you own, for interoperability,
