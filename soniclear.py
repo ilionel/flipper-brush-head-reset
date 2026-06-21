@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sonicare BrushSync (NTAG213) helper.
+Soniclear - NTAG213 brush-head helper.
 
 Computes the per-head NTAG213 write password from UID + MFG code, decodes the
 brushing-time counter, and prints the reset page value. Reverse-engineered
@@ -9,8 +9,8 @@ password algo by @ATC1441 (Aaron Christophel); verified against a known head.
 Reset = write page 0x24 (36) = `00 00 02 00` (counter -> 0) authenticating with PWD.
 
 Usage:
-    sonicare.py dump.nfc                 # parse a Flipper .nfc dump
-    sonicare.py --uid 0436F47A141F90 --mfg "250625 51T"
+    soniclear.py dump.nfc                 # parse a Flipper .nfc dump
+    soniclear.py --uid 0436F47A141F90 --mfg "250625 51T"
 """
 import sys, re
 

@@ -9,67 +9,67 @@
 #include <storage/storage.h>
 #include <dialogs/dialogs.h>
 
-#include "sonicare_i.h"
-#include "sonicare_pwd.h"
-#include "sonicare_poller.h"
+#include "soniclear_i.h"
+#include "soniclear_pwd.h"
+#include "soniclear_poller.h"
 
-// Philips Sonicare BrushSync (NTAG213) brush-head wear-counter tool.
+// NTAG213 smart-toothbrush-head wear-counter tool.
 // Counter = brushing seconds at page 0x24 (LE16); fresh = 0. Per-head write password is
 // computed from UID + MFG (handle-independent, no checksum on the counter).
 
-#define SONICARE_DIR EXT_PATH("apps_data/sonicare")
-#define SONICARE_EXT ".sonicare"
+#define SONICLEAR_DIR EXT_PATH("apps_data/soniclear")
+#define SONICLEAR_EXT ".soniclear"
 
 typedef enum {
-    SonicareViewSubmenu,
-    SonicareViewAdvanced,
-    SonicareViewWork,
-    SonicareViewNumber,
-    SonicareViewByteInput,
-    SonicareViewTextInput,
-} SonicareViewId;
+    SoniclearViewSubmenu,
+    SoniclearViewAdvanced,
+    SoniclearViewWork,
+    SoniclearViewNumber,
+    SoniclearViewByteInput,
+    SoniclearViewTextInput,
+} SoniclearViewId;
 
 typedef enum {
-    SonicareMenuRead,
-    SonicareMenuReset,
-    SonicareMenuSave,
-    SonicareMenuRestore,
-    SonicareMenuAdvanced,
-    SonicareMenuAbout,
-} SonicareMenuItem;
+    SoniclearMenuRead,
+    SoniclearMenuReset,
+    SoniclearMenuSave,
+    SoniclearMenuRestore,
+    SoniclearMenuAdvanced,
+    SoniclearMenuAbout,
+} SoniclearMenuItem;
 
 typedef enum {
-    SonicareAdvSetPct,
-    SonicareAdvSetMin,
-    SonicareAdvPwdCalc,
-} SonicareAdvItem;
+    SoniclearAdvSetPct,
+    SoniclearAdvSetMin,
+    SoniclearAdvPwdCalc,
+} SoniclearAdvItem;
 
 typedef enum {
-    SonicareScreenScanning, // talking to the tag
-    SonicareScreenResult, // NFC outcome
-    SonicareScreenPwdCalc, // manual password calculator result
-    SonicareScreenAbout,
-} SonicareScreen;
+    SoniclearScreenScanning, // talking to the tag
+    SoniclearScreenResult, // NFC outcome
+    SoniclearScreenPwdCalc, // manual password calculator result
+    SoniclearScreenAbout,
+} SoniclearScreen;
 
 typedef enum {
-    SonicareCustomEventDone = 100,
-} SonicareCustomEvent;
+    SoniclearCustomEventDone = 100,
+} SoniclearCustomEvent;
 
 // Set-usage entry is in minutes; the LE16 counter caps at 65535 s = 1092 min.
-#define SONICARE_MAX_MIN 1092
+#define SONICLEAR_MAX_MIN 1092
 
 typedef struct {
-    SonicareScreen screen;
-    SonicareOp op;
+    SoniclearScreen screen;
+    SoniclearOp op;
     uint16_t write_seconds; // for write ops (drawing the target)
     bool saved; // report saved to SD
-    SonicareResult res;
+    SoniclearResult res;
     // password calculator inputs/result
     uint8_t calc_uid[7];
     char calc_mfg[11];
     uint8_t calc_pwd[4];
     uint8_t anim;
-} SonicareWorkModel;
+} SoniclearWorkModel;
 
 typedef struct {
     Gui* gui;
@@ -83,43 +83,43 @@ typedef struct {
     ByteInput* byte_input;
     TextInput* text_input;
     NotificationApp* notifications;
-    SonicarePoller* poller;
+    SoniclearPoller* poller;
     FuriTimer* timer;
-    SonicareResult result; // filled by the poller thread
-    SonicareOp op;
+    SoniclearResult result; // filled by the poller thread
+    SoniclearOp op;
     uint16_t write_seconds;
     bool save_after_read; // menu "Save": auto-save the read record
     bool usage_by_percent; // Set usage: true = % entry, false = minutes entry
     // password calculator scratch
     uint8_t calc_uid[7];
     char calc_mfg[11];
-} SonicareApp;
+} SoniclearApp;
 
 /* --------------------------------- drawing ---------------------------------- */
 
-static void sonicare_draw_spinner(Canvas* canvas, uint8_t x, uint8_t y, uint8_t frame) {
+static void soniclear_draw_spinner(Canvas* canvas, uint8_t x, uint8_t y, uint8_t frame) {
     static const char* f[] = {"|", "/", "-", "\\"};
     canvas_draw_str(canvas, x, y, f[frame & 3]);
 }
 
-static void sonicare_work_draw(Canvas* canvas, void* model) {
-    SonicareWorkModel* m = model;
+static void soniclear_work_draw(Canvas* canvas, void* model) {
+    SoniclearWorkModel* m = model;
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
     char line[28];
 
-    if(m->screen == SonicareScreenAbout) {
+    if(m->screen == SoniclearScreenAbout) {
         canvas_draw_str(canvas, 2, 11, "Brush Head Reset");
         canvas_set_font(canvas, FontSecondary);
         canvas_draw_str(canvas, 2, 24, "NTAG213 wear-counter");
-        canvas_draw_str(canvas, 2, 34, "tool for your own brush");
-        canvas_draw_str(canvas, 2, 44, "heads. Not affiliated");
-        canvas_draw_str(canvas, 2, 54, "with Philips.");
+        canvas_draw_str(canvas, 2, 34, "tool for your own");
+        canvas_draw_str(canvas, 2, 44, "brush heads.");
+        canvas_draw_str(canvas, 2, 54, "Independent project.");
         canvas_draw_str(canvas, 110, 63, "Back");
         return;
     }
 
-    if(m->screen == SonicareScreenPwdCalc) {
+    if(m->screen == SoniclearScreenPwdCalc) {
         canvas_draw_str(canvas, 2, 11, "Password calc");
         canvas_set_font(canvas, FontSecondary);
         snprintf(
@@ -151,20 +151,20 @@ static void sonicare_work_draw(Canvas* canvas, void* model) {
         return;
     }
 
-    if(m->screen == SonicareScreenScanning) {
-        canvas_draw_str(canvas, 2, 11, m->op == SonicareOpWrite ? "Writing head" : "Reading head");
+    if(m->screen == SoniclearScreenScanning) {
+        canvas_draw_str(canvas, 2, 11, m->op == SoniclearOpWrite ? "Writing head" : "Reading head");
         canvas_set_font(canvas, FontSecondary);
         canvas_draw_str(canvas, 2, 28, "Brush base flat on the");
         canvas_draw_str(canvas, 2, 38, "Flipper back. Hold");
         canvas_draw_str(canvas, 2, 48, "still until done.");
-        sonicare_draw_spinner(canvas, 118, 33, m->anim);
+        soniclear_draw_spinner(canvas, 118, 33, m->anim);
         canvas_draw_str(canvas, 2, 63, "Back: cancel");
         return;
     }
 
-    // SonicareScreenResult
-    SonicareResult* r = &m->res;
-    canvas_draw_str(canvas, 2, 11, m->op == SonicareOpWrite ? "Write result" : "Brush head");
+    // SoniclearScreenResult
+    SoniclearResult* r = &m->res;
+    canvas_draw_str(canvas, 2, 11, m->op == SoniclearOpWrite ? "Write result" : "Brush head");
     canvas_set_font(canvas, FontSecondary);
 
     if(!r->present) {
@@ -173,22 +173,22 @@ static void sonicare_work_draw(Canvas* canvas, void* model) {
         return;
     }
     if(!r->valid) {
-        canvas_draw_str(canvas, 2, 30, r->message ? r->message : "Not a Sonicare head");
-        canvas_draw_str(canvas, 2, 42, "(NTAG213 BrushSync only)");
+        canvas_draw_str(canvas, 2, 30, r->message ? r->message : "Unknown tag layout");
+        canvas_draw_str(canvas, 2, 42, "(NTAG213 head only)");
         canvas_draw_str(canvas, 2, 63, "Back");
         return;
     }
 
     snprintf(line, sizeof(line), "Model: %s", r->mfg);
     canvas_draw_str(canvas, 2, 22, line);
-    unsigned pct = (100u * r->seconds) / SONICARE_LIFE_SECONDS;
+    unsigned pct = (100u * r->seconds) / SONICLEAR_LIFE_SECONDS;
     snprintf(line, sizeof(line), "Used: %u%%  (%u min)", pct, r->seconds / 60u);
     canvas_draw_str(canvas, 2, 32, line);
     snprintf(
         line, sizeof(line), "PWD: %02X%02X%02X%02X", r->pwd[0], r->pwd[1], r->pwd[2], r->pwd[3]);
     canvas_draw_str(canvas, 2, 42, line);
 
-    if(m->op == SonicareOpWrite) {
+    if(m->op == SoniclearOpWrite) {
         const char* st;
         if(r->verify_ok) {
             st = (m->write_seconds == 0) ? "RESET OK -> 0%" : "Set OK";
@@ -209,11 +209,11 @@ static void sonicare_work_draw(Canvas* canvas, void* model) {
 
 /* --------------------------------- save / restore --------------------------- */
 
-static void sonicare_save_record(SonicareApp* app, const SonicareResult* r) {
-    storage_simply_mkdir(app->storage, SONICARE_DIR);
+static void soniclear_save_record(SoniclearApp* app, const SoniclearResult* r) {
+    storage_simply_mkdir(app->storage, SONICLEAR_DIR);
     FuriString* path = furi_string_alloc_printf(
-        "%s/sonicare_%02X%02X%02X%02X%02X%02X%02X%s",
-        SONICARE_DIR,
+        "%s/soniclear_%02X%02X%02X%02X%02X%02X%02X%s",
+        SONICLEAR_DIR,
         r->uid[0],
         r->uid[1],
         r->uid[2],
@@ -221,12 +221,12 @@ static void sonicare_save_record(SonicareApp* app, const SonicareResult* r) {
         r->uid[4],
         r->uid[5],
         r->uid[6],
-        SONICARE_EXT);
+        SONICLEAR_EXT);
     FuriString* body = furi_string_alloc();
-    unsigned pct = (100u * r->seconds) / SONICARE_LIFE_SECONDS;
+    unsigned pct = (100u * r->seconds) / SONICLEAR_LIFE_SECONDS;
     furi_string_printf(
         body,
-        "Filetype: Sonicare head\nUID: %02X%02X%02X%02X%02X%02X%02X\nMFG: %s\n"
+        "Filetype: Soniclear head\nUID: %02X%02X%02X%02X%02X%02X%02X\nMFG: %s\n"
         "PWD: %02X%02X%02X%02X\nSeconds: %u\nUsed: %u min (%u%%)\n",
         r->uid[0],
         r->uid[1],
@@ -255,7 +255,7 @@ static void sonicare_save_record(SonicareApp* app, const SonicareResult* r) {
     notification_message(app->notifications, ok ? &sequence_success : &sequence_error);
 }
 
-static bool sonicare_parse_seconds(SonicareApp* app, const char* path, uint16_t* out) {
+static bool soniclear_parse_seconds(SoniclearApp* app, const char* path, uint16_t* out) {
     File* f = storage_file_alloc(app->storage);
     bool ok = false;
     if(storage_file_open(f, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
@@ -275,24 +275,24 @@ static bool sonicare_parse_seconds(SonicareApp* app, const char* path, uint16_t*
 
 /* --------------------------------- worker glue ------------------------------ */
 
-static void sonicare_on_done(void* context) {
-    SonicareApp* app = context;
-    view_dispatcher_send_custom_event(app->view_dispatcher, SonicareCustomEventDone);
+static void soniclear_on_done(void* context) {
+    SoniclearApp* app = context;
+    view_dispatcher_send_custom_event(app->view_dispatcher, SoniclearCustomEventDone);
 }
 
-static void sonicare_timer_cb(void* context) {
-    SonicareApp* app = context;
-    with_view_model(app->work, SonicareWorkModel * m, { m->anim++; }, true);
+static void soniclear_timer_cb(void* context) {
+    SoniclearApp* app = context;
+    with_view_model(app->work, SoniclearWorkModel * m, { m->anim++; }, true);
 }
 
-static void sonicare_start_scan(SonicareApp* app, SonicareOp op, uint16_t write_seconds) {
+static void soniclear_start_scan(SoniclearApp* app, SoniclearOp op, uint16_t write_seconds) {
     app->op = op;
     app->write_seconds = write_seconds;
     with_view_model(
         app->work,
-        SonicareWorkModel * m,
+        SoniclearWorkModel * m,
         {
-            m->screen = SonicareScreenScanning;
+            m->screen = SoniclearScreenScanning;
             m->op = op;
             m->write_seconds = write_seconds;
             m->saved = false;
@@ -300,35 +300,35 @@ static void sonicare_start_scan(SonicareApp* app, SonicareOp op, uint16_t write_
             memset(&m->res, 0, sizeof(m->res));
         },
         true);
-    view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewWork);
-    sonicare_poller_start(app->poller, op, write_seconds, &app->result, sonicare_on_done, app);
+    view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewWork);
+    soniclear_poller_start(app->poller, op, write_seconds, &app->result, soniclear_on_done, app);
     furi_timer_start(app->timer, furi_ms_to_ticks(150));
 }
 
-static bool sonicare_custom_event_cb(void* context, uint32_t event) {
-    SonicareApp* app = context;
-    if(event != SonicareCustomEventDone) return false;
+static bool soniclear_custom_event_cb(void* context, uint32_t event) {
+    SoniclearApp* app = context;
+    if(event != SoniclearCustomEventDone) return false;
 
     furi_timer_stop(app->timer);
-    sonicare_poller_stop(app->poller); // joins the poller thread -> result is stable
+    soniclear_poller_stop(app->poller); // joins the poller thread -> result is stable
 
-    SonicareResult* r = &app->result;
+    SoniclearResult* r = &app->result;
     bool good = r->present && r->valid &&
-                (app->op == SonicareOpRead || (r->did_write && r->verify_ok));
+                (app->op == SoniclearOpRead || (r->did_write && r->verify_ok));
     notification_message(app->notifications, good ? &sequence_success : &sequence_error);
 
     bool saved = false;
     if(app->save_after_read && r->present && r->valid) {
-        sonicare_save_record(app, r);
+        soniclear_save_record(app, r);
         saved = true;
     }
     app->save_after_read = false;
 
     with_view_model(
         app->work,
-        SonicareWorkModel * m,
+        SoniclearWorkModel * m,
         {
-            m->screen = SonicareScreenResult;
+            m->screen = SoniclearScreenResult;
             m->res = *r;
             m->saved = saved;
         },
@@ -338,256 +338,256 @@ static bool sonicare_custom_event_cb(void* context, uint32_t event) {
 
 /* --------------------------------- set-usage (% or minutes) ----------------- */
 
-static void sonicare_number_done(void* context, int32_t number) {
-    SonicareApp* app = context;
+static void soniclear_number_done(void* context, int32_t number) {
+    SoniclearApp* app = context;
     int32_t s = app->usage_by_percent ?
-                    (int32_t)((int64_t)number * SONICARE_LIFE_SECONDS / 100) : // % -> seconds
+                    (int32_t)((int64_t)number * SONICLEAR_LIFE_SECONDS / 100) : // % -> seconds
                     number * 60; // minutes -> seconds
     if(s < 0) s = 0;
     if(s > 65535) s = 65535;
     // Single placement: read identity (gets pwd) -> auth -> write, all in one field
     // session. The poller only authenticates after a valid read, with the computed
     // password, exactly once -> the 3-attempt lockout can never be reached.
-    sonicare_start_scan(app, SonicareOpWrite, (uint16_t)s);
+    soniclear_start_scan(app, SoniclearOpWrite, (uint16_t)s);
 }
 
 /* --------------------------------- password calc ---------------------------- */
 
-static void sonicare_text_input_done(void* context);
+static void soniclear_text_input_done(void* context);
 
-static void sonicare_byte_input_done(void* context) {
-    SonicareApp* app = context;
+static void soniclear_byte_input_done(void* context) {
+    SoniclearApp* app = context;
     // got UID -> ask for MFG, then compute the password
     memset(app->calc_mfg, 0, sizeof(app->calc_mfg));
     text_input_set_header_text(app->text_input, "MFG (e.g. 250625 51T)");
     text_input_set_result_callback(
         app->text_input,
-        sonicare_text_input_done,
+        soniclear_text_input_done,
         app,
         app->calc_mfg,
         sizeof(app->calc_mfg),
         true);
-    view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewTextInput);
+    view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewTextInput);
 }
 
-static void sonicare_text_input_done(void* context) {
-    SonicareApp* app = context;
+static void soniclear_text_input_done(void* context) {
+    SoniclearApp* app = context;
     uint8_t pwd[4];
     size_t mfg_len = strlen(app->calc_mfg);
-    sonicare_pwd_compute(app->calc_uid, (const uint8_t*)app->calc_mfg, mfg_len, pwd);
+    soniclear_pwd_compute(app->calc_uid, (const uint8_t*)app->calc_mfg, mfg_len, pwd);
     with_view_model(
         app->work,
-        SonicareWorkModel * m,
+        SoniclearWorkModel * m,
         {
-            m->screen = SonicareScreenPwdCalc;
+            m->screen = SoniclearScreenPwdCalc;
             memcpy(m->calc_uid, app->calc_uid, 7);
             memcpy(m->calc_mfg, app->calc_mfg, sizeof(m->calc_mfg));
             memcpy(m->calc_pwd, pwd, 4);
         },
         true);
-    view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewWork);
+    view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewWork);
 }
 
 /* --------------------------------- restore ---------------------------------- */
 
-static void sonicare_handle_restore(SonicareApp* app) {
-    storage_simply_mkdir(app->storage, SONICARE_DIR);
-    FuriString* path = furi_string_alloc_set_str(SONICARE_DIR);
+static void soniclear_handle_restore(SoniclearApp* app) {
+    storage_simply_mkdir(app->storage, SONICLEAR_DIR);
+    FuriString* path = furi_string_alloc_set_str(SONICLEAR_DIR);
     DialogsFileBrowserOptions opts;
-    dialog_file_browser_set_basic_options(&opts, SONICARE_EXT, NULL);
-    opts.base_path = SONICARE_DIR;
+    dialog_file_browser_set_basic_options(&opts, SONICLEAR_EXT, NULL);
+    opts.base_path = SONICLEAR_DIR;
     uint16_t seconds = 0;
     if(dialog_file_browser_show(app->dialogs, path, path, &opts) &&
-       sonicare_parse_seconds(app, furi_string_get_cstr(path), &seconds)) {
-        sonicare_start_scan(app, SonicareOpWrite, seconds);
+       soniclear_parse_seconds(app, furi_string_get_cstr(path), &seconds)) {
+        soniclear_start_scan(app, SoniclearOpWrite, seconds);
     }
     furi_string_free(path);
 }
 
 /* --------------------------------- input / menu ----------------------------- */
 
-static bool sonicare_work_input(InputEvent* event, void* context) {
-    SonicareApp* app = context;
+static bool soniclear_work_input(InputEvent* event, void* context) {
+    SoniclearApp* app = context;
     if(event->type != InputTypeShort) return false;
 
-    SonicareScreen screen = SonicareScreenResult;
+    SoniclearScreen screen = SoniclearScreenResult;
     bool valid_read = false;
     with_view_model(
         app->work,
-        SonicareWorkModel * m,
+        SoniclearWorkModel * m,
         {
             screen = m->screen;
-            valid_read = (m->op == SonicareOpRead) && m->res.present && m->res.valid && !m->saved;
+            valid_read = (m->op == SoniclearOpRead) && m->res.present && m->res.valid && !m->saved;
         },
         false);
 
     if(event->key == InputKeyBack) {
-        if(screen == SonicareScreenScanning) {
+        if(screen == SoniclearScreenScanning) {
             furi_timer_stop(app->timer);
-            sonicare_poller_stop(app->poller);
+            soniclear_poller_stop(app->poller);
         }
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewSubmenu);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewSubmenu);
         return true;
     }
-    if(event->key == InputKeyOk && screen == SonicareScreenResult && valid_read) {
+    if(event->key == InputKeyOk && screen == SoniclearScreenResult && valid_read) {
         // a plain Read result: OK saves the record to SD
-        sonicare_save_record(app, &app->result);
-        with_view_model(app->work, SonicareWorkModel * m, { m->saved = true; }, true);
+        soniclear_save_record(app, &app->result);
+        with_view_model(app->work, SoniclearWorkModel * m, { m->saved = true; }, true);
         return true;
     }
     return false;
 }
 
-static void sonicare_submenu_cb(void* context, uint32_t index) {
-    SonicareApp* app = context;
+static void soniclear_submenu_cb(void* context, uint32_t index) {
+    SoniclearApp* app = context;
     switch(index) {
-    case SonicareMenuRead:
+    case SoniclearMenuRead:
         app->save_after_read = false;
-        sonicare_start_scan(app, SonicareOpRead, 0);
+        soniclear_start_scan(app, SoniclearOpRead, 0);
         break;
-    case SonicareMenuReset:
+    case SoniclearMenuReset:
         // Single placement: read -> auth -> write 0 (one field session, one auth)
         app->save_after_read = false;
-        sonicare_start_scan(app, SonicareOpWrite, 0);
+        soniclear_start_scan(app, SoniclearOpWrite, 0);
         break;
-    case SonicareMenuSave:
+    case SoniclearMenuSave:
         app->save_after_read = true; // read, then auto-save the record
-        sonicare_start_scan(app, SonicareOpRead, 0);
+        soniclear_start_scan(app, SoniclearOpRead, 0);
         break;
-    case SonicareMenuRestore:
-        sonicare_handle_restore(app);
+    case SoniclearMenuRestore:
+        soniclear_handle_restore(app);
         break;
-    case SonicareMenuAdvanced:
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewAdvanced);
+    case SoniclearMenuAdvanced:
+        view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewAdvanced);
         break;
-    case SonicareMenuAbout:
+    case SoniclearMenuAbout:
         with_view_model(
-            app->work, SonicareWorkModel * m, { m->screen = SonicareScreenAbout; }, true);
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewWork);
+            app->work, SoniclearWorkModel * m, { m->screen = SoniclearScreenAbout; }, true);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewWork);
         break;
     default:
         break;
     }
 }
 
-static void sonicare_advanced_cb(void* context, uint32_t index) {
-    SonicareApp* app = context;
+static void soniclear_advanced_cb(void* context, uint32_t index) {
+    SoniclearApp* app = context;
     switch(index) {
-    case SonicareAdvSetPct:
+    case SoniclearAdvSetPct:
         app->usage_by_percent = true;
         number_input_set_header_text(app->number, "Usage % (0-100)");
-        number_input_set_result_callback(app->number, sonicare_number_done, app, 0, 0, 100);
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewNumber);
+        number_input_set_result_callback(app->number, soniclear_number_done, app, 0, 0, 100);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewNumber);
         break;
-    case SonicareAdvSetMin:
+    case SoniclearAdvSetMin:
         app->usage_by_percent = false;
         number_input_set_header_text(app->number, "Usage minutes (0-1092)");
         number_input_set_result_callback(
-            app->number, sonicare_number_done, app, 0, 0, SONICARE_MAX_MIN);
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewNumber);
+            app->number, soniclear_number_done, app, 0, 0, SONICLEAR_MAX_MIN);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewNumber);
         break;
-    case SonicareAdvPwdCalc:
+    case SoniclearAdvPwdCalc:
         memset(app->calc_uid, 0, sizeof(app->calc_uid));
         byte_input_set_header_text(app->byte_input, "Tag UID (7 bytes)");
         byte_input_set_result_callback(
-            app->byte_input, sonicare_byte_input_done, NULL, app, app->calc_uid, 7);
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewByteInput);
+            app->byte_input, soniclear_byte_input_done, NULL, app, app->calc_uid, 7);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewByteInput);
         break;
     default:
         break;
     }
 }
 
-static uint32_t sonicare_prev_submenu(void* context) {
+static uint32_t soniclear_prev_submenu(void* context) {
     UNUSED(context);
-    return SonicareViewSubmenu;
+    return SoniclearViewSubmenu;
 }
 
 // inputs reached via Advanced return there on Back
-static uint32_t sonicare_prev_advanced(void* context) {
+static uint32_t soniclear_prev_advanced(void* context) {
     UNUSED(context);
-    return SonicareViewAdvanced;
+    return SoniclearViewAdvanced;
 }
 
-static bool sonicare_nav_cb(void* context) {
-    SonicareApp* app = context;
+static bool soniclear_nav_cb(void* context) {
+    SoniclearApp* app = context;
     view_dispatcher_stop(app->view_dispatcher);
     return true;
 }
 
 /* --------------------------------- app lifecycle ---------------------------- */
 
-int32_t sonicare_app(void* p) {
+int32_t soniclear_app(void* p) {
     UNUSED(p);
-    SonicareApp* app = malloc(sizeof(SonicareApp));
-    memset(app, 0, sizeof(SonicareApp));
+    SoniclearApp* app = malloc(sizeof(SoniclearApp));
+    memset(app, 0, sizeof(SoniclearApp));
 
     app->gui = furi_record_open(RECORD_GUI);
     app->storage = furi_record_open(RECORD_STORAGE);
     app->dialogs = furi_record_open(RECORD_DIALOGS);
     app->notifications = furi_record_open(RECORD_NOTIFICATION);
-    app->poller = sonicare_poller_alloc();
-    app->timer = furi_timer_alloc(sonicare_timer_cb, FuriTimerTypePeriodic, app);
+    app->poller = soniclear_poller_alloc();
+    app->timer = furi_timer_alloc(soniclear_timer_cb, FuriTimerTypePeriodic, app);
 
     app->view_dispatcher = view_dispatcher_alloc();
     view_dispatcher_attach_to_gui(app->view_dispatcher, app->gui, ViewDispatcherTypeFullscreen);
     view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
-    view_dispatcher_set_custom_event_callback(app->view_dispatcher, sonicare_custom_event_cb);
-    view_dispatcher_set_navigation_event_callback(app->view_dispatcher, sonicare_nav_cb);
+    view_dispatcher_set_custom_event_callback(app->view_dispatcher, soniclear_custom_event_cb);
+    view_dispatcher_set_navigation_event_callback(app->view_dispatcher, soniclear_nav_cb);
 
     app->submenu = submenu_alloc();
-    submenu_add_item(app->submenu, "Read brush head", SonicareMenuRead, sonicare_submenu_cb, app);
-    submenu_add_item(app->submenu, "Reset to new", SonicareMenuReset, sonicare_submenu_cb, app);
-    submenu_add_item(app->submenu, "Save", SonicareMenuSave, sonicare_submenu_cb, app);
-    submenu_add_item(app->submenu, "Restore", SonicareMenuRestore, sonicare_submenu_cb, app);
-    submenu_add_item(app->submenu, "Advanced", SonicareMenuAdvanced, sonicare_submenu_cb, app);
-    submenu_add_item(app->submenu, "About", SonicareMenuAbout, sonicare_submenu_cb, app);
+    submenu_add_item(app->submenu, "Read brush head", SoniclearMenuRead, soniclear_submenu_cb, app);
+    submenu_add_item(app->submenu, "Reset to new", SoniclearMenuReset, soniclear_submenu_cb, app);
+    submenu_add_item(app->submenu, "Save", SoniclearMenuSave, soniclear_submenu_cb, app);
+    submenu_add_item(app->submenu, "Restore", SoniclearMenuRestore, soniclear_submenu_cb, app);
+    submenu_add_item(app->submenu, "Advanced", SoniclearMenuAdvanced, soniclear_submenu_cb, app);
+    submenu_add_item(app->submenu, "About", SoniclearMenuAbout, soniclear_submenu_cb, app);
     view_dispatcher_add_view(
-        app->view_dispatcher, SonicareViewSubmenu, submenu_get_view(app->submenu));
+        app->view_dispatcher, SoniclearViewSubmenu, submenu_get_view(app->submenu));
 
     app->advanced = submenu_alloc();
-    submenu_add_item(app->advanced, "Set usage %", SonicareAdvSetPct, sonicare_advanced_cb, app);
-    submenu_add_item(app->advanced, "Set usage min", SonicareAdvSetMin, sonicare_advanced_cb, app);
+    submenu_add_item(app->advanced, "Set usage %", SoniclearAdvSetPct, soniclear_advanced_cb, app);
+    submenu_add_item(app->advanced, "Set usage min", SoniclearAdvSetMin, soniclear_advanced_cb, app);
     submenu_add_item(
-        app->advanced, "Password calc", SonicareAdvPwdCalc, sonicare_advanced_cb, app);
-    view_set_previous_callback(submenu_get_view(app->advanced), sonicare_prev_submenu);
+        app->advanced, "Password calc", SoniclearAdvPwdCalc, soniclear_advanced_cb, app);
+    view_set_previous_callback(submenu_get_view(app->advanced), soniclear_prev_submenu);
     view_dispatcher_add_view(
-        app->view_dispatcher, SonicareViewAdvanced, submenu_get_view(app->advanced));
+        app->view_dispatcher, SoniclearViewAdvanced, submenu_get_view(app->advanced));
 
     app->work = view_alloc();
-    view_allocate_model(app->work, ViewModelTypeLocking, sizeof(SonicareWorkModel));
+    view_allocate_model(app->work, ViewModelTypeLocking, sizeof(SoniclearWorkModel));
     view_set_context(app->work, app);
-    view_set_draw_callback(app->work, sonicare_work_draw);
-    view_set_input_callback(app->work, sonicare_work_input);
-    view_dispatcher_add_view(app->view_dispatcher, SonicareViewWork, app->work);
+    view_set_draw_callback(app->work, soniclear_work_draw);
+    view_set_input_callback(app->work, soniclear_work_input);
+    view_dispatcher_add_view(app->view_dispatcher, SoniclearViewWork, app->work);
 
     app->number = number_input_alloc();
-    view_set_previous_callback(number_input_get_view(app->number), sonicare_prev_advanced);
+    view_set_previous_callback(number_input_get_view(app->number), soniclear_prev_advanced);
     view_dispatcher_add_view(
-        app->view_dispatcher, SonicareViewNumber, number_input_get_view(app->number));
+        app->view_dispatcher, SoniclearViewNumber, number_input_get_view(app->number));
 
     app->byte_input = byte_input_alloc();
-    view_set_previous_callback(byte_input_get_view(app->byte_input), sonicare_prev_advanced);
+    view_set_previous_callback(byte_input_get_view(app->byte_input), soniclear_prev_advanced);
     view_dispatcher_add_view(
-        app->view_dispatcher, SonicareViewByteInput, byte_input_get_view(app->byte_input));
+        app->view_dispatcher, SoniclearViewByteInput, byte_input_get_view(app->byte_input));
 
     app->text_input = text_input_alloc();
-    view_set_previous_callback(text_input_get_view(app->text_input), sonicare_prev_advanced);
+    view_set_previous_callback(text_input_get_view(app->text_input), soniclear_prev_advanced);
     view_dispatcher_add_view(
-        app->view_dispatcher, SonicareViewTextInput, text_input_get_view(app->text_input));
+        app->view_dispatcher, SoniclearViewTextInput, text_input_get_view(app->text_input));
 
-    view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewSubmenu);
+    view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewSubmenu);
     view_dispatcher_run(app->view_dispatcher);
 
     // cleanup
     furi_timer_stop(app->timer);
-    sonicare_poller_stop(app->poller);
-    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewSubmenu);
-    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewAdvanced);
-    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewWork);
-    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewNumber);
-    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewByteInput);
-    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewTextInput);
+    soniclear_poller_stop(app->poller);
+    view_dispatcher_remove_view(app->view_dispatcher, SoniclearViewSubmenu);
+    view_dispatcher_remove_view(app->view_dispatcher, SoniclearViewAdvanced);
+    view_dispatcher_remove_view(app->view_dispatcher, SoniclearViewWork);
+    view_dispatcher_remove_view(app->view_dispatcher, SoniclearViewNumber);
+    view_dispatcher_remove_view(app->view_dispatcher, SoniclearViewByteInput);
+    view_dispatcher_remove_view(app->view_dispatcher, SoniclearViewTextInput);
     submenu_free(app->submenu);
     submenu_free(app->advanced);
     view_free(app->work);
@@ -596,7 +596,7 @@ int32_t sonicare_app(void* p) {
     text_input_free(app->text_input);
     view_dispatcher_free(app->view_dispatcher);
     furi_timer_free(app->timer);
-    sonicare_poller_free(app->poller);
+    soniclear_poller_free(app->poller);
     furi_record_close(RECORD_NOTIFICATION);
     furi_record_close(RECORD_DIALOGS);
     furi_record_close(RECORD_STORAGE);

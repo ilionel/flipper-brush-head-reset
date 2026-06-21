@@ -4,9 +4,9 @@
 #include <stddef.h>
 
 /**
- * Compute the NTAG213 write password of a Philips Sonicare BrushSync brush head.
+ * Compute the NTAG213 write password of a Philips Soniclear BrushSync brush head.
  *
- * Algorithm (reverse-engineered from Sonicare handle firmware by @ATC1441, verified
+ * Algorithm (reverse-engineered from Soniclear handle firmware by @ATC1441, verified
  * against a real head): CRC16-CCITT (poly 0x1021) with init 0x49A3 over the 7-byte UID,
  * then a second CRC16 over the MFG code seeded with the first result; the two 16-bit
  * results form a 32-bit word that is byte-swapped within each half. The password is
@@ -17,7 +17,7 @@
  * @param mfg_len  length of mfg (normally 10)
  * @param pwd_out  receives the 4-byte password (PWD_AUTH key), MSB first
  */
-void sonicare_pwd_compute(
+void soniclear_pwd_compute(
     const uint8_t uid[7],
     const uint8_t* mfg,
     size_t mfg_len,
