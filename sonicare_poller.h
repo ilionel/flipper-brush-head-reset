@@ -11,12 +11,14 @@ SonicarePoller* sonicare_poller_alloc(void);
 void sonicare_poller_free(SonicarePoller* instance);
 
 /**
- * Start an operation asynchronously. The result is written into *result; `done` is
+ * Start an operation asynchronously. For SonicareOpWrite, the counter is set to
+ * `write_seconds` (0 = brand-new). The result is written into *result; `done` is
  * invoked (from the poller thread) once finished. Call sonicare_poller_stop() afterwards.
  */
 void sonicare_poller_start(
     SonicarePoller* instance,
     SonicareOp op,
+    uint16_t write_seconds,
     SonicareResult* result,
     SonicarePollerDone done,
     void* context);

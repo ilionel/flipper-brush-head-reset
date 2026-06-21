@@ -12,6 +12,7 @@ struct SonicarePoller {
     Nfc* nfc;
     NfcPoller* poller;
     SonicareOp op;
+    uint16_t write_seconds;
     SonicareResult* result;
     SonicarePollerDone done;
     void* context;
@@ -65,11 +66,11 @@ static bool sonicare_read_identity(MfUltralightPoller* poller, SonicareResult* r
     return true;
 }
 
-// Authenticate with the computed password and write the counter to the "new" value.
-// Only ONE auth attempt is made (the password is computed, hence correct) so the
-// 3-attempt permanent lockout can never be triggered.
-static void sonicare_reset_counter(MfUltralightPoller* poller, SonicareResult* r) {
-    r->did_reset = true;
+// Authenticate with the computed password and write the counter to `seconds`
+// (0 = brand-new). Only ONE auth attempt is made (the password is computed, hence
+// correct) so the 3-attempt permanent lockout can never be triggered.
+static void sonicare_write_counter(MfUltralightPoller* poller, SonicareResult* r, uint16_t seconds) {
+    r->did_write = true;
 
     MfUltralightPollerAuthContext auth;
     memset(&auth, 0, sizeof(auth));
@@ -82,7 +83,9 @@ static void sonicare_reset_counter(MfUltralightPoller* poller, SonicareResult* r
     }
     r->auth_ok = true;
 
-    MfUltralightPage page = {.data = {0x00, 0x00, 0x02, 0x00}}; // counter 0, frame preserved
+    // counter = seconds (LE16), frame bytes 02 00 preserved
+    MfUltralightPage page = {
+        .data = {(uint8_t)(seconds & 0xFF), (uint8_t)(seconds >> 8), 0x02, 0x00}};
     if(mf_ultralight_poller_write_page(poller, SONICARE_COUNTER_PAGE, &page) !=
        MfUltralightErrorNone) {
         r->message = "Write failed";
@@ -94,10 +97,10 @@ static void sonicare_reset_counter(MfUltralightPoller* poller, SonicareResult* r
     MfUltralightPageReadCommandData d;
     if(mf_ultralight_poller_read_page(poller, SONICARE_COUNTER_PAGE, &d) == MfUltralightErrorNone) {
         r->verify_ok =
-            (d.page[0].data[0] == 0x00 && d.page[0].data[1] == 0x00 && d.page[0].data[2] == 0x02 &&
-             d.page[0].data[3] == 0x00);
+            (d.page[0].data[0] == page.data[0] && d.page[0].data[1] == page.data[1] &&
+             d.page[0].data[2] == 0x02 && d.page[0].data[3] == 0x00);
     }
-    if(r->verify_ok) r->seconds = 0;
+    if(r->verify_ok) r->seconds = seconds;
 }
 
 static NfcCommand sonicare_poller_callback(NfcGenericEventEx event, void* context) {
@@ -117,8 +120,8 @@ static NfcCommand sonicare_poller_callback(NfcGenericEventEx event, void* contex
         if(!r->message) r->message = r->present ? "Read error" : "Not an NTAG";
     } else if(!r->valid) {
         r->message = "Not a Sonicare head";
-    } else if(instance->op == SonicareOpReset) {
-        sonicare_reset_counter(poller, r);
+    } else if(instance->op == SonicareOpWrite) {
+        sonicare_write_counter(poller, r, instance->write_seconds);
     }
 
     if(instance->done) instance->done(instance->context);
@@ -128,6 +131,7 @@ static NfcCommand sonicare_poller_callback(NfcGenericEventEx event, void* contex
 void sonicare_poller_start(
     SonicarePoller* instance,
     SonicareOp op,
+    uint16_t write_seconds,
     SonicareResult* result,
     SonicarePollerDone done,
     void* context) {
@@ -135,6 +139,7 @@ void sonicare_poller_start(
     furi_assert(!instance->running);
     memset(result, 0, sizeof(SonicareResult));
     instance->op = op;
+    instance->write_seconds = write_seconds;
     instance->result = result;
     instance->done = done;
     instance->context = context;

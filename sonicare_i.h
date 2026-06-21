@@ -11,7 +11,7 @@
 
 typedef enum {
     SonicareOpRead, // read identity + counter, compute password (no write)
-    SonicareOpReset, // read, authenticate, write counter -> 0, verify
+    SonicareOpWrite, // read, authenticate, write counter = target, verify
 } SonicareOp;
 
 // Outcome of one NFC operation (filled by the poller worker, drawn by the UI).
@@ -21,8 +21,8 @@ typedef struct {
     uint8_t uid[7];
     char mfg[11]; // 10 ASCII chars + NUL
     uint8_t pwd[4]; // computed PWD_AUTH key
-    uint16_t seconds; // brushing seconds used
-    bool did_reset; // a reset was attempted
+    uint16_t seconds; // brushing seconds used (after a write, the written value)
+    bool did_write; // a write (reset/set) was attempted
     bool auth_ok;
     bool write_ok;
     bool verify_ok;
