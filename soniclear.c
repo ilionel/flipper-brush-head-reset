@@ -191,7 +191,7 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
             canvas_draw_str(canvas, 2, 26, line);
         }
         canvas_draw_str(canvas, 2, 38, "Place head flat, hold");
-        canvas_draw_str(canvas, 2, 48, "still. One auth attempt.");
+        canvas_draw_str(canvas, 2, 48, "still. Lockout-safe.");
         canvas_draw_str(canvas, 2, 62, "OK: write");
         canvas_draw_str(canvas, 100, 62, "Back");
         return;
