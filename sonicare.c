@@ -39,7 +39,8 @@ typedef enum {
 } SonicareMenuItem;
 
 typedef enum {
-    SonicareAdvSetUsage,
+    SonicareAdvSetPct,
+    SonicareAdvSetMin,
     SonicareAdvPwdCalc,
 } SonicareAdvItem;
 
@@ -89,6 +90,7 @@ typedef struct {
     SonicareOp op;
     uint16_t write_seconds;
     bool save_after_read; // menu "Save": auto-save the read record
+    bool usage_by_percent; // Set usage: true = % entry, false = minutes entry
     // password calculator scratch
     uint8_t calc_uid[7];
     char calc_mfg[11];
@@ -342,11 +344,13 @@ static bool sonicare_custom_event_cb(void* context, uint32_t event) {
     return true;
 }
 
-/* --------------------------------- set-usage (minutes) ---------------------- */
+/* --------------------------------- set-usage (% or minutes) ----------------- */
 
 static void sonicare_number_done(void* context, int32_t number) {
     SonicareApp* app = context;
-    int32_t s = number * 60; // minutes -> seconds
+    int32_t s = app->usage_by_percent ?
+                    (int32_t)((int64_t)number * SONICARE_LIFE_SECONDS / 100) : // % -> seconds
+                    number * 60; // minutes -> seconds
     if(s < 0) s = 0;
     if(s > 65535) s = 65535;
     sonicare_start_scan(app, SonicareOpWrite, (uint16_t)s);
@@ -486,7 +490,14 @@ static void sonicare_submenu_cb(void* context, uint32_t index) {
 static void sonicare_advanced_cb(void* context, uint32_t index) {
     SonicareApp* app = context;
     switch(index) {
-    case SonicareAdvSetUsage:
+    case SonicareAdvSetPct:
+        app->usage_by_percent = true;
+        number_input_set_header_text(app->number, "Usage % (0-100)");
+        number_input_set_result_callback(app->number, sonicare_number_done, app, 0, 0, 100);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewNumber);
+        break;
+    case SonicareAdvSetMin:
+        app->usage_by_percent = false;
         number_input_set_header_text(app->number, "Usage minutes (0-1092)");
         number_input_set_result_callback(
             app->number, sonicare_number_done, app, 0, 0, SONICARE_MAX_MIN);
@@ -552,8 +563,8 @@ int32_t sonicare_app(void* p) {
         app->view_dispatcher, SonicareViewSubmenu, submenu_get_view(app->submenu));
 
     app->advanced = submenu_alloc();
-    submenu_add_item(
-        app->advanced, "Set usage", SonicareAdvSetUsage, sonicare_advanced_cb, app);
+    submenu_add_item(app->advanced, "Set usage %", SonicareAdvSetPct, sonicare_advanced_cb, app);
+    submenu_add_item(app->advanced, "Set usage min", SonicareAdvSetMin, sonicare_advanced_cb, app);
     submenu_add_item(
         app->advanced, "Password calc", SonicareAdvPwdCalc, sonicare_advanced_cb, app);
     view_set_previous_callback(submenu_get_view(app->advanced), sonicare_prev_submenu);
