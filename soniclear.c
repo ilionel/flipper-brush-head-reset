@@ -248,7 +248,12 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
         canvas_draw_str(canvas, 2, 22, line);
         snprintf(line, sizeof(line), "MFG %s", r->mfg);
         canvas_draw_str(canvas, 2, 32, line);
-        snprintf(line, sizeof(line), "Sec %u (%u%%)", r->seconds, soniclear_pct(r->seconds));
+        snprintf(
+            line,
+            sizeof(line),
+            "Sec %u (%u%%)",
+            r->seconds,
+            (100u * r->seconds) / SONICLEAR_LIFE_SECONDS);
         canvas_draw_str(canvas, 2, 42, line);
         snprintf(
             line,
@@ -264,12 +269,13 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
         return;
     }
 
-    unsigned pct = soniclear_pct(r->seconds);
+    unsigned pct = soniclear_pct(r->seconds); // capped, for the bar fill
+    unsigned real_pct = (100u * r->seconds) / SONICLEAR_LIFE_SECONDS; // uncapped, for text
     snprintf(line, sizeof(line), "%s  %u min", r->mfg, r->seconds / 60u);
     canvas_draw_str(canvas, 2, 21, line);
-    // usage gauge with the percentage printed at the right
+    // usage gauge with the (true) percentage printed at the right
     soniclear_draw_bar(canvas, 2, 25, 100, 7, pct);
-    snprintf(line, sizeof(line), "%u%%", pct);
+    snprintf(line, sizeof(line), "%u%%", real_pct);
     canvas_draw_str(canvas, 107, 32, line);
     snprintf(
         line, sizeof(line), "PWD %02X%02X%02X%02X", r->pwd[0], r->pwd[1], r->pwd[2], r->pwd[3]);
