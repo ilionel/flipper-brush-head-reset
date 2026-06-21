@@ -515,7 +515,7 @@ static void soniclear_byte_input_done(void* context) {
     } else {
         memset(app->calc_mfg, 0, sizeof(app->calc_mfg));
     }
-    text_input_set_header_text(app->text_input, "MFG (e.g. 250625 51T)");
+    text_input_set_header_text(app->text_input, "MFG (e.g. 010203 99Z)");
     text_input_set_result_callback(
         app->text_input,
         soniclear_text_input_done,

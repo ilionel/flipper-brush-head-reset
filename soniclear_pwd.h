@@ -4,16 +4,16 @@
 #include <stddef.h>
 
 /**
- * Compute the NTAG213 write password of a Philips Soniclear BrushSync brush head.
+ * Compute the NTAG213 write password of a smart-toothbrush brush head.
  *
- * Algorithm (reverse-engineered from Soniclear handle firmware by @ATC1441, verified
- * against a real head): CRC16-CCITT (poly 0x1021) with init 0x49A3 over the 7-byte UID,
+ * Algorithm (reverse-engineered by @ATC1441, verified against real heads):
+ * CRC16-CCITT (poly 0x1021) with init 0x49A3 over the 7-byte UID,
  * then a second CRC16 over the MFG code seeded with the first result; the two 16-bit
  * results form a 32-bit word that is byte-swapped within each half. The password is
  * handle-independent: it depends only on the head's UID + MFG.
  *
  * @param uid      7-byte tag UID
- * @param mfg      MFG code bytes (pages 0x21-0x23, offset 2, 10 ASCII chars e.g. "250625 51T")
+ * @param mfg      MFG code bytes (pages 0x21-0x23, offset 2, 10 ASCII chars e.g. "010203 99Z")
  * @param mfg_len  length of mfg (normally 10)
  * @param pwd_out  receives the 4-byte password (PWD_AUTH key), MSB first
  */

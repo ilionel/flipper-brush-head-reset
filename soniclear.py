@@ -13,7 +13,7 @@ Reset = authenticate with PWD, then write page 0x24 (36) = `00 00 02 00`
 Examples:
     soniclear.py dump.nfc                  # a Flipper NFC dump (.nfc)
     soniclear.py head.soniclear            # a record saved by the Flipper app
-    soniclear.py --uid 0436F47A141F90 --mfg "250625 51T"
+    soniclear.py --uid 04112233445566 --mfg "010203 99Z"
 """
 import argparse
 import re
@@ -102,8 +102,8 @@ def main():
         "or use --uid/--mfg.",
     )
     ap.add_argument("file", nargs="?", help="a Flipper .nfc dump or a .soniclear record")
-    ap.add_argument("--uid", help="7-byte UID as hex, e.g. 0436F47A141F90")
-    ap.add_argument("--mfg", help='MFG code, e.g. "250625 51T"')
+    ap.add_argument("--uid", help="7-byte UID as hex, e.g. 04112233445566")
+    ap.add_argument("--mfg", help='MFG code, e.g. "010203 99Z"')
     ap.add_argument("--selftest", action="store_true", help="check the algorithm against a fixed vector")
     args = ap.parse_args()
 

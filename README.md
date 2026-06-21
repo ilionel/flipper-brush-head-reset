@@ -39,8 +39,9 @@ target value; you confirm *before* placing the head, then make a single still pl
 for the whole read → authenticate → write → verify session.
 
 The write password is **computed** from the tag's UID + factory code, so it is never
-guessed: the app makes **exactly one authentication attempt per write**, which means
-the tag's 3-failed-attempts permanent lockout can't be triggered by normal use.
+guessed. The tag only ever processes a single *accepted* authentication; a genuine
+rejection is never retried (see [Safety](#safety-against-permanent-lockout)), so the
+tag's 3-failed-attempts permanent lockout can't be triggered by normal use.
 
 ## How the counter is encoded
 
@@ -81,7 +82,7 @@ raw values:
 ```sh
 python3 soniclear.py dump.nfc
 python3 soniclear.py head.soniclear
-python3 soniclear.py --uid 0436F47A141F90 --mfg "250625 51T"
+python3 soniclear.py --uid 04112233445566 --mfg "010203 99Z"
 ```
 
 ## Usage
@@ -90,8 +91,9 @@ python3 soniclear.py --uid 0436F47A141F90 --mfg "250625 51T"
 2. Open **NFC → Brush Head Reset** and pick an action.
 3. Lay the **base of the head flat on the back of the Flipper** and **hold it still**
    until the operation finishes. The head's coil is tiny — stable coupling matters,
-   especially for a write. If a read works but a write says "Auth failed", it's a
-   coupling glitch: reposition and try again (the password is correct by construction).
+   especially for a write. Transient coupling drops are retried automatically; if a
+   write still ends with "No tag answer", just reposition and try again (the password
+   is correct by construction, so this is harmless).
 
 ## Safety against permanent lockout
 
