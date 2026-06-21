@@ -104,7 +104,15 @@ def main():
     ap.add_argument("file", nargs="?", help="a Flipper .nfc dump or a .soniclear record")
     ap.add_argument("--uid", help="7-byte UID as hex, e.g. 0436F47A141F90")
     ap.add_argument("--mfg", help='MFG code, e.g. "250625 51T"')
+    ap.add_argument("--selftest", action="store_true", help="check the algorithm against a fixed vector")
     args = ap.parse_args()
+
+    if args.selftest:
+        # synthetic regression vector (not a real head) - guards the algorithm
+        got = gen_pwd([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06], list(b"010203 99Z"))
+        ok = got == "80B022C1"
+        print(f"selftest: {got} {'OK' if ok else 'FAIL (expected 80B022C1)'}")
+        sys.exit(0 if ok else 1)
 
     if args.uid:
         if not args.mfg:

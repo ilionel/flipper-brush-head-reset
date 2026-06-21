@@ -3,3 +3,5 @@ dist/
 build/
 .vscode/
 *_d.elf
+__pycache__/
+*.pyc
