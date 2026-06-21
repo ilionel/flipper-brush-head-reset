@@ -12,6 +12,11 @@
 // NTAG213 page holding the wear counter (bytes 0-1 = brushing seconds LE16; 2-3 = 02 00).
 #define SONICLEAR_COUNTER_PAGE 36u
 
+// How many times to retry a PWD_AUTH that fails with a *transport* error (timeout /
+// lost coupling). Such failures never reach the tag, so retrying cannot advance the
+// AUTHLIM lockout counter. A real key rejection (the tag answered) is never retried.
+#define SONICLEAR_AUTH_RETRIES 6
+
 typedef enum {
     SoniclearOpRead, // read identity + counter, compute password (no write)
     SoniclearOpWrite, // read, authenticate, write counter = target, verify

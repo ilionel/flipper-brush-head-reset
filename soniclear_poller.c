@@ -67,8 +67,10 @@ static bool soniclear_read_identity(MfUltralightPoller* poller, SoniclearResult*
 }
 
 // Authenticate with the computed password and write the counter to `seconds`
-// (0 = brand-new). Only ONE auth attempt is made (the password is computed, hence
-// correct) so the 3-attempt permanent lockout can never be triggered.
+// (0 = brand-new). The password is computed (hence correct), and the only auth that
+// the tag actually processes is a single accepted one: transport failures (which the
+// tag never sees) may be retried, but a rejection is never retried, so the 3-attempt
+// permanent lockout can never be triggered.
 static void soniclear_write_counter(MfUltralightPoller* poller, SoniclearResult* r, uint16_t seconds) {
     r->did_write = true;
 
@@ -76,11 +78,19 @@ static void soniclear_write_counter(MfUltralightPoller* poller, SoniclearResult*
     memset(&auth, 0, sizeof(auth));
     memcpy(auth.password.data, r->pwd, 4);
 
-    MfUltralightError err = mf_ultralight_poller_auth_pwd(poller, &auth);
+    // A transport error (timeout / lost coupling) means the PWD_AUTH exchange never
+    // completed, so the tag registered no wrong-password attempt and the AUTHLIM
+    // lockout counter is untouched. That makes it SAFE to retry the transport a few
+    // times while the head settles. We must NOT retry once the tag actually answers
+    // (auth_success == false) -- that is a real key rejection and would count toward
+    // the 3-strikes permanent lock.
+    MfUltralightError err = MfUltralightErrorNone;
+    for(int attempt = 0; attempt < SONICLEAR_AUTH_RETRIES; attempt++) {
+        err = mf_ultralight_poller_auth_pwd(poller, &auth);
+        if(err == MfUltralightErrorNone) break; // tag answered (accept or reject)
+        furi_delay_ms(40);
+    }
     if(err != MfUltralightErrorNone) {
-        // No clean PWD_AUTH exchange (timeout / lost coupling). The tag did not
-        // register a wrong-password attempt, so the AUTHLIM lockout counter is
-        // unaffected -> the user can safely reposition and retry.
         r->message = "No tag answer";
         return;
     }
@@ -126,10 +136,21 @@ static NfcCommand soniclear_poller_callback(NfcGenericEventEx event, void* conte
     }
     if(iso->type != Iso14443_3aPollerEventTypeReady) return NfcCommandContinue;
 
-    if(!soniclear_read_identity(poller, r)) {
+    // Reads can also miss on transient coupling; retrying them is safe (no AUTHLIM
+    // cost) and lets a write proceed once a clean identity read lands.
+    bool got_id = false;
+    for(int attempt = 0; attempt < SONICLEAR_AUTH_RETRIES; attempt++) {
+        if(soniclear_read_identity(poller, r)) {
+            got_id = true;
+            break;
+        }
+        furi_delay_ms(40);
+    }
+
+    if(!got_id) {
         if(!r->message) r->message = r->present ? "Read error" : "Not an NTAG";
     } else if(!r->valid) {
-        r->message = "Not a Soniclear head";
+        r->message = "Unknown tag layout";
     } else if(instance->op == SoniclearOpWrite) {
         soniclear_write_counter(poller, r, instance->write_seconds);
     }
