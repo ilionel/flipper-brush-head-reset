@@ -66,6 +66,7 @@ typedef struct {
     uint16_t confirm_seconds; // pending write target (confirm screen)
     char confirm_title[20]; // pending write label (confirm screen)
     bool saved; // report saved to SD
+    bool details; // result screen: show the full per-field detail page
     SoniclearResult res;
     // password calculator inputs/result
     uint8_t calc_uid[7];
@@ -212,9 +213,54 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
         return;
     }
     if(!r->valid) {
-        canvas_draw_str(canvas, 2, 30, r->message ? r->message : "Unknown tag layout");
-        canvas_draw_str(canvas, 2, 42, "(NTAG213 head only)");
+        canvas_draw_str(canvas, 2, 28, r->message ? r->message : "Unknown tag layout");
+        // still show the UID we read, so the user can use Password calc manually
+        snprintf(
+            line,
+            sizeof(line),
+            "UID %02X%02X%02X%02X%02X%02X%02X",
+            r->uid[0],
+            r->uid[1],
+            r->uid[2],
+            r->uid[3],
+            r->uid[4],
+            r->uid[5],
+            r->uid[6]);
+        canvas_draw_str(canvas, 2, 40, line);
+        canvas_draw_str(canvas, 2, 50, "(NTAG213 head only)");
         canvas_draw_str(canvas, 2, 63, "Back");
+        return;
+    }
+
+    // detail page: every field, reachable with Right from the summary
+    if(m->details) {
+        snprintf(
+            line,
+            sizeof(line),
+            "UID %02X%02X%02X%02X%02X%02X%02X",
+            r->uid[0],
+            r->uid[1],
+            r->uid[2],
+            r->uid[3],
+            r->uid[4],
+            r->uid[5],
+            r->uid[6]);
+        canvas_draw_str(canvas, 2, 22, line);
+        snprintf(line, sizeof(line), "MFG %s", r->mfg);
+        canvas_draw_str(canvas, 2, 32, line);
+        snprintf(line, sizeof(line), "Sec %u (%u%%)", r->seconds, soniclear_pct(r->seconds));
+        canvas_draw_str(canvas, 2, 42, line);
+        snprintf(
+            line,
+            sizeof(line),
+            "PWD %02X%02X%02X%02X",
+            r->pwd[0],
+            r->pwd[1],
+            r->pwd[2],
+            r->pwd[3]);
+        canvas_draw_str(canvas, 2, 52, line);
+        canvas_draw_str(canvas, 2, 63, "Left: back");
+        canvas_draw_str(canvas, 104, 63, "Back");
         return;
     }
 
@@ -249,6 +295,7 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
         canvas_draw_str(canvas, 104, 63, "Back");
     } else {
         canvas_draw_str(canvas, 2, 55, m->saved ? "Saved to SD" : "OK: save to SD");
+        canvas_draw_str(canvas, 2, 63, "Right: details");
         canvas_draw_str(canvas, 104, 63, "Back");
     }
 }
@@ -345,6 +392,7 @@ static void soniclear_start_scan(SoniclearApp* app, SoniclearOp op, uint16_t wri
             m->op = op;
             m->write_seconds = write_seconds;
             m->saved = false;
+            m->details = false;
             m->anim = 0;
             memset(&m->res, 0, sizeof(m->res));
         },
@@ -478,13 +526,15 @@ static bool soniclear_work_input(InputEvent* event, void* context) {
     if(event->type != InputTypeShort) return false;
 
     SoniclearScreen screen = SoniclearScreenResult;
-    bool valid_read = false;
+    bool valid_read = false; // a Read result that can still be saved (OK)
+    bool read_ok = false; // a valid Read result (regardless of saved)
     with_view_model(
         app->work,
         SoniclearWorkModel * m,
         {
             screen = m->screen;
-            valid_read = (m->op == SoniclearOpRead) && m->res.present && m->res.valid && !m->saved;
+            read_ok = (m->op == SoniclearOpRead) && m->res.present && m->res.valid;
+            valid_read = read_ok && !m->saved;
         },
         false);
 
@@ -508,6 +558,13 @@ static bool soniclear_work_input(InputEvent* event, void* context) {
             with_view_model(app->work, SoniclearWorkModel * m, { m->saved = true; }, true);
             return true;
         }
+    }
+    // Right/Left toggle the per-field detail page on a valid Read result
+    if(screen == SoniclearScreenResult && read_ok &&
+       (event->key == InputKeyRight || event->key == InputKeyLeft)) {
+        bool det = (event->key == InputKeyRight);
+        with_view_model(app->work, SoniclearWorkModel * m, { m->details = det; }, true);
+        return true;
     }
     return false;
 }
