@@ -24,13 +24,19 @@ when to nag you for a replacement. This app reads that page, shows the usage, an
 with the head's own per-head password — can write it back to a value of your choice
 (0 = brand new).
 
-- **Read brush head** — shows model code, usage (% and minutes) and the computed password.
+- **Read brush head** — model code, a usage gauge (% and minutes) and the computed
+  password. Press **Right** for a detail page (UID, MFG, raw seconds, PWD); **OK** saves
+  the read to the SD card.
 - **Reset to new** — set the counter back to 0%.
 - **Save / Restore** — store a read to the SD card and write it back later.
 - **Advanced**
   - **Set usage %** / **Set usage min** — write any target you want.
   - **Password calc** — compute a head's password from its UID + MFG code (offline).
 - **About**.
+
+Every write (Reset / Set usage / Restore) first shows a **confirmation screen** with the
+target value; you confirm *before* placing the head, then make a single still placement
+for the whole read → authenticate → write → verify session.
 
 The write password is **computed** from the tag's UID + factory code, so it is never
 guessed: the app makes **exactly one authentication attempt per write**, which means
@@ -65,6 +71,18 @@ ufbt launch     # build + install + run on a connected Flipper
 Copy `dist/brush_reset.fap` to `/ext/apps/NFC/` on the SD card to install manually.
 
 The 10×10 app icon can be regenerated with `python3 gen_icon.py` (needs Pillow).
+
+## Host tool
+
+`soniclear.py` (Python 3, standard library only) computes the password and decodes the
+counter offline, from a Flipper `.nfc` dump, a `.soniclear` record saved by the app, or
+raw values:
+
+```sh
+python3 soniclear.py dump.nfc
+python3 soniclear.py head.soniclear
+python3 soniclear.py --uid 0436F47A141F90 --mfg "250625 51T"
+```
 
 ## Usage
 
