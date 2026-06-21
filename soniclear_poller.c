@@ -77,8 +77,18 @@ static void soniclear_write_counter(MfUltralightPoller* poller, SoniclearResult*
     memcpy(auth.password.data, r->pwd, 4);
 
     MfUltralightError err = mf_ultralight_poller_auth_pwd(poller, &auth);
-    if(err != MfUltralightErrorNone || !auth.auth_success) {
-        r->message = "Auth failed";
+    if(err != MfUltralightErrorNone) {
+        // No clean PWD_AUTH exchange (timeout / lost coupling). The tag did not
+        // register a wrong-password attempt, so the AUTHLIM lockout counter is
+        // unaffected -> the user can safely reposition and retry.
+        r->message = "No tag answer";
+        return;
+    }
+    if(!auth.auth_success) {
+        // The tag answered but rejected the key (this would count toward AUTHLIM).
+        // With a correctly computed password this should not happen unless the
+        // head's MFG layout differs from the known one.
+        r->message = "Password rejected";
         return;
     }
     r->auth_ok = true;

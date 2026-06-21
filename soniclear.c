@@ -287,8 +287,11 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
             st = "Write failed";
             hint = "Hold still, retry";
         } else {
-            st = "Auth failed";
-            hint = "Hold still, retry";
+            // auth failed: r->message tells coupling-loss apart from key rejection
+            st = r->message ? r->message : "Auth failed";
+            hint = (r->message && strcmp(r->message, "Password rejected") == 0) ?
+                       "Check UID/MFG" :
+                       "Hold still, retry";
         }
         canvas_draw_str(canvas, 2, 55, st);
         if(hint) canvas_draw_str(canvas, 2, 63, hint);
