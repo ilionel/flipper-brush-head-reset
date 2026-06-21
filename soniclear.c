@@ -8,6 +8,7 @@
 #include <notification/notification_messages.h>
 #include <storage/storage.h>
 #include <dialogs/dialogs.h>
+#include <furi_hal_rtc.h>
 
 #include "soniclear_i.h"
 #include "soniclear_pwd.h"
@@ -344,10 +345,13 @@ static void soniclear_save_record(SoniclearApp* app, const SoniclearResult* r) {
         SONICLEAR_EXT);
     FuriString* body = furi_string_alloc();
     unsigned pct = (100u * r->seconds) / SONICLEAR_LIFE_SECONDS;
+    DateTime dt;
+    furi_hal_rtc_get_datetime(&dt);
     furi_string_printf(
         body,
         "Filetype: Soniclear head\nUID: %02X%02X%02X%02X%02X%02X%02X\nMFG: %s\n"
-        "PWD: %02X%02X%02X%02X\nSeconds: %u\nUsed: %u min (%u%%)\n",
+        "PWD: %02X%02X%02X%02X\nSeconds: %u\nUsed: %u min (%u%%)\n"
+        "Date: %04u-%02u-%02u %02u:%02u\n",
         r->uid[0],
         r->uid[1],
         r->uid[2],
@@ -362,7 +366,12 @@ static void soniclear_save_record(SoniclearApp* app, const SoniclearResult* r) {
         r->pwd[3],
         r->seconds,
         r->seconds / 60u,
-        pct);
+        pct,
+        dt.year,
+        dt.month,
+        dt.day,
+        dt.hour,
+        dt.minute);
     File* f = storage_file_alloc(app->storage);
     bool ok = false;
     if(storage_file_open(f, furi_string_get_cstr(path), FSAM_WRITE, FSOM_CREATE_ALWAYS)) {

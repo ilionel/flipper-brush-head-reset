@@ -131,6 +131,8 @@ def main():
             mfg = list(rec["MFG"].encode())
             seconds = int(rec["Seconds"]) if "Seconds" in rec else None
             report(uid, mfg, seconds)
+            if rec.get("Date"):
+                print(f'Saved  : {rec["Date"]}')
             return
         uid, pages = parse_nfc(args.file)
         if uid is None or COUNTER_PAGE not in pages:
