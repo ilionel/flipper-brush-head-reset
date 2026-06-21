@@ -5,3 +5,4 @@ build/
 *_d.elf
 __pycache__/
 *.pyc
+test/test_pwd
