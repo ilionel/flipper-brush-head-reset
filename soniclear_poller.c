@@ -1,3 +1,13 @@
+// Async NFC worker for the brush-head NTAG213.
+//
+// We drive an MfUltralight poller in "ex" mode: nfc_poller_start_ex() runs the
+// poller on its own thread and calls soniclear_poller_callback() with the parent
+// Iso14443_3a event. On the Ready event (a tag is activated) we issue raw page
+// reads / auth / writes synchronously and then stop the poller. The result is
+// written into a caller-owned SoniclearResult and the `done` callback fires once.
+//
+// Lockout safety lives here: see soniclear_write_counter().
+
 #include "soniclear_poller.h"
 #include "soniclear_pwd.h"
 

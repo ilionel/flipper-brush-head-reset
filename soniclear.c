@@ -14,8 +14,14 @@
 #include "soniclear_poller.h"
 
 // NTAG213 smart-toothbrush-head wear-counter tool.
-// Counter = brushing seconds at page 0x24 (LE16); fresh = 0. Per-head write password is
-// computed from UID + MFG (handle-independent, no checksum on the counter).
+//
+// Counter = brushing seconds at page 0x24 (LE16); fresh = 0. The per-head write
+// password is computed from UID + MFG (handle-independent, no checksum on the
+// counter) in soniclear_pwd.c. NFC I/O is done by the async worker in
+// soniclear_poller.c; this file is the GUI: a ViewDispatcher with a main submenu,
+// an Advanced submenu and one custom "work" view that renders every transient
+// screen (confirm / scanning / result / detail / password-calc / about) from a
+// single locking view-model.
 
 #define SONICLEAR_DIR EXT_PATH("apps_data/soniclear")
 #define SONICLEAR_EXT ".soniclear"
