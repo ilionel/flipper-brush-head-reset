@@ -2,11 +2,12 @@
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
 #include <gui/modules/submenu.h>
-#include <gui/modules/variable_item_list.h>
+#include <gui/modules/number_input.h>
 #include <gui/modules/byte_input.h>
 #include <gui/modules/text_input.h>
 #include <notification/notification_messages.h>
 #include <storage/storage.h>
+#include <dialogs/dialogs.h>
 
 #include "sonicare_i.h"
 #include "sonicare_pwd.h"
@@ -14,15 +15,16 @@
 
 // Philips Sonicare BrushSync (NTAG213) brush-head wear-counter tool.
 // Counter = brushing seconds at page 0x24 (LE16); fresh = 0. Per-head write password is
-// computed from UID + MFG (handle-independent, no checksum on the counter). v2 adds:
-// custom usage set, on-device password calculator, and a saved report.
+// computed from UID + MFG (handle-independent, no checksum on the counter).
 
 #define SONICARE_DIR EXT_PATH("apps_data/sonicare")
+#define SONICARE_EXT ".sonicare"
 
 typedef enum {
     SonicareViewSubmenu,
+    SonicareViewAdvanced,
     SonicareViewWork,
-    SonicareViewTuning,
+    SonicareViewNumber,
     SonicareViewByteInput,
     SonicareViewTextInput,
 } SonicareViewId;
@@ -30,10 +32,16 @@ typedef enum {
 typedef enum {
     SonicareMenuRead,
     SonicareMenuReset,
-    SonicareMenuSetUsage,
-    SonicareMenuPwdCalc,
+    SonicareMenuSave,
+    SonicareMenuRestore,
+    SonicareMenuAdvanced,
     SonicareMenuAbout,
 } SonicareMenuItem;
+
+typedef enum {
+    SonicareAdvSetUsage,
+    SonicareAdvPwdCalc,
+} SonicareAdvItem;
 
 typedef enum {
     SonicareScreenConfirm, // reset confirmation
@@ -47,9 +55,8 @@ typedef enum {
     SonicareCustomEventDone = 100,
 } SonicareCustomEvent;
 
-// percentage presets for "Set usage"
-static const uint8_t sonicare_usage_pct[] = {0, 25, 50, 75, 90, 100};
-#define SONICARE_USAGE_COUNT (sizeof(sonicare_usage_pct) / sizeof(sonicare_usage_pct[0]))
+// Set-usage entry is in minutes; the LE16 counter caps at 65535 s = 1092 min.
+#define SONICARE_MAX_MIN 1092
 
 typedef struct {
     SonicareScreen screen;
@@ -67,10 +74,12 @@ typedef struct {
 typedef struct {
     Gui* gui;
     Storage* storage;
+    DialogsApp* dialogs;
     ViewDispatcher* view_dispatcher;
     Submenu* submenu;
+    Submenu* advanced;
     View* work;
-    VariableItemList* tuning;
+    NumberInput* number;
     ByteInput* byte_input;
     TextInput* text_input;
     NotificationApp* notifications;
@@ -79,7 +88,7 @@ typedef struct {
     SonicareResult result; // filled by the poller thread
     SonicareOp op;
     uint16_t write_seconds;
-    uint8_t usage_idx; // selected "Set usage" preset
+    bool save_after_read; // menu "Save": auto-save the read record
     // password calculator scratch
     uint8_t calc_uid[7];
     char calc_mfg[11];
@@ -199,17 +208,17 @@ static void sonicare_work_draw(Canvas* canvas, void* model) {
         }
         canvas_draw_str(canvas, 2, 54, st);
     } else {
-        canvas_draw_str(canvas, 2, 54, m->saved ? "Saved to SD" : "OK: save report");
+        canvas_draw_str(canvas, 2, 54, m->saved ? "Saved to SD" : "OK: save");
     }
     canvas_draw_str(canvas, 104, 63, "Back");
 }
 
-/* --------------------------------- save report ------------------------------ */
+/* --------------------------------- save / restore --------------------------- */
 
-static void sonicare_save_report(SonicareApp* app, const SonicareResult* r) {
+static void sonicare_save_record(SonicareApp* app, const SonicareResult* r) {
     storage_simply_mkdir(app->storage, SONICARE_DIR);
     FuriString* path = furi_string_alloc_printf(
-        "%s/sonicare_%02X%02X%02X%02X%02X%02X%02X.txt",
+        "%s/sonicare_%02X%02X%02X%02X%02X%02X%02X%s",
         SONICARE_DIR,
         r->uid[0],
         r->uid[1],
@@ -217,13 +226,14 @@ static void sonicare_save_report(SonicareApp* app, const SonicareResult* r) {
         r->uid[3],
         r->uid[4],
         r->uid[5],
-        r->uid[6]);
+        r->uid[6],
+        SONICARE_EXT);
     FuriString* body = furi_string_alloc();
     unsigned pct = (100u * r->seconds) / SONICARE_LIFE_SECONDS;
     furi_string_printf(
         body,
-        "Sonicare BrushSync head\nUID: %02X%02X%02X%02X%02X%02X%02X\nMFG: %s\n"
-        "PWD: %02X%02X%02X%02X\nUsed: %u s (%u min, %u%%)\n",
+        "Filetype: Sonicare head\nUID: %02X%02X%02X%02X%02X%02X%02X\nMFG: %s\n"
+        "PWD: %02X%02X%02X%02X\nSeconds: %u\nUsed: %u min (%u%%)\n",
         r->uid[0],
         r->uid[1],
         r->uid[2],
@@ -249,6 +259,24 @@ static void sonicare_save_report(SonicareApp* app, const SonicareResult* r) {
     furi_string_free(body);
     furi_string_free(path);
     notification_message(app->notifications, ok ? &sequence_success : &sequence_error);
+}
+
+static bool sonicare_parse_seconds(SonicareApp* app, const char* path, uint16_t* out) {
+    File* f = storage_file_alloc(app->storage);
+    bool ok = false;
+    if(storage_file_open(f, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        char buf[256];
+        size_t n = storage_file_read(f, buf, sizeof(buf) - 1);
+        buf[n] = '\0';
+        char* p = strstr(buf, "Seconds:");
+        if(p) {
+            *out = (uint16_t)atoi(p + 8);
+            ok = true;
+        }
+    }
+    storage_file_close(f);
+    storage_file_free(f);
+    return ok;
 }
 
 /* --------------------------------- worker glue ------------------------------ */
@@ -295,33 +323,33 @@ static bool sonicare_custom_event_cb(void* context, uint32_t event) {
                 (app->op == SonicareOpRead || (r->did_write && r->verify_ok));
     notification_message(app->notifications, good ? &sequence_success : &sequence_error);
 
+    bool saved = false;
+    if(app->save_after_read && r->present && r->valid) {
+        sonicare_save_record(app, r);
+        saved = true;
+    }
+    app->save_after_read = false;
+
     with_view_model(
         app->work,
         SonicareWorkModel * m,
         {
             m->screen = SonicareScreenResult;
             m->res = *r;
+            m->saved = saved;
         },
         true);
     return true;
 }
 
-/* --------------------------------- set-usage list --------------------------- */
+/* --------------------------------- set-usage (minutes) ---------------------- */
 
-static void sonicare_usage_change_cb(VariableItem* item) {
-    SonicareApp* app = variable_item_get_context(item);
-    app->usage_idx = variable_item_get_current_value_index(item);
-    char b[8];
-    snprintf(b, sizeof(b), "%u%%", sonicare_usage_pct[app->usage_idx]);
-    variable_item_set_current_value_text(item, b);
-}
-
-static void sonicare_usage_enter_cb(void* context, uint32_t index) {
-    UNUSED(index);
+static void sonicare_number_done(void* context, int32_t number) {
     SonicareApp* app = context;
-    uint16_t seconds =
-        (uint16_t)((uint32_t)sonicare_usage_pct[app->usage_idx] * SONICARE_LIFE_SECONDS / 100u);
-    sonicare_start_scan(app, SonicareOpWrite, seconds);
+    int32_t s = number * 60; // minutes -> seconds
+    if(s < 0) s = 0;
+    if(s > 65535) s = 65535;
+    sonicare_start_scan(app, SonicareOpWrite, (uint16_t)s);
 }
 
 /* --------------------------------- password calc ---------------------------- */
@@ -361,6 +389,22 @@ static void sonicare_text_input_done(void* context) {
     view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewWork);
 }
 
+/* --------------------------------- restore ---------------------------------- */
+
+static void sonicare_handle_restore(SonicareApp* app) {
+    storage_simply_mkdir(app->storage, SONICARE_DIR);
+    FuriString* path = furi_string_alloc_set_str(SONICARE_DIR);
+    DialogsFileBrowserOptions opts;
+    dialog_file_browser_set_basic_options(&opts, SONICARE_EXT, NULL);
+    opts.base_path = SONICARE_DIR;
+    uint16_t seconds = 0;
+    if(dialog_file_browser_show(app->dialogs, path, path, &opts) &&
+       sonicare_parse_seconds(app, furi_string_get_cstr(path), &seconds)) {
+        sonicare_start_scan(app, SonicareOpWrite, seconds);
+    }
+    furi_string_free(path);
+}
+
 /* --------------------------------- input / menu ----------------------------- */
 
 static bool sonicare_work_input(InputEvent* event, void* context) {
@@ -392,7 +436,7 @@ static bool sonicare_work_input(InputEvent* event, void* context) {
             return true;
         }
         if(screen == SonicareScreenResult && valid_read) {
-            sonicare_save_report(app, &app->result);
+            sonicare_save_record(app, &app->result);
             with_view_model(app->work, SonicareWorkModel * m, { m->saved = true; }, true);
             return true;
         }
@@ -404,6 +448,7 @@ static void sonicare_submenu_cb(void* context, uint32_t index) {
     SonicareApp* app = context;
     switch(index) {
     case SonicareMenuRead:
+        app->save_after_read = false;
         sonicare_start_scan(app, SonicareOpRead, 0);
         break;
     case SonicareMenuReset:
@@ -418,15 +463,15 @@ static void sonicare_submenu_cb(void* context, uint32_t index) {
             true);
         view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewWork);
         break;
-    case SonicareMenuSetUsage:
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewTuning);
+    case SonicareMenuSave:
+        app->save_after_read = true; // read, then auto-save the record
+        sonicare_start_scan(app, SonicareOpRead, 0);
         break;
-    case SonicareMenuPwdCalc:
-        memset(app->calc_uid, 0, sizeof(app->calc_uid));
-        byte_input_set_header_text(app->byte_input, "Tag UID (7 bytes)");
-        byte_input_set_result_callback(
-            app->byte_input, sonicare_byte_input_done, NULL, app, app->calc_uid, 7);
-        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewByteInput);
+    case SonicareMenuRestore:
+        sonicare_handle_restore(app);
+        break;
+    case SonicareMenuAdvanced:
+        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewAdvanced);
         break;
     case SonicareMenuAbout:
         with_view_model(
@@ -438,9 +483,36 @@ static void sonicare_submenu_cb(void* context, uint32_t index) {
     }
 }
 
+static void sonicare_advanced_cb(void* context, uint32_t index) {
+    SonicareApp* app = context;
+    switch(index) {
+    case SonicareAdvSetUsage:
+        number_input_set_header_text(app->number, "Usage minutes (0-1092)");
+        number_input_set_result_callback(
+            app->number, sonicare_number_done, app, 0, 0, SONICARE_MAX_MIN);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewNumber);
+        break;
+    case SonicareAdvPwdCalc:
+        memset(app->calc_uid, 0, sizeof(app->calc_uid));
+        byte_input_set_header_text(app->byte_input, "Tag UID (7 bytes)");
+        byte_input_set_result_callback(
+            app->byte_input, sonicare_byte_input_done, NULL, app, app->calc_uid, 7);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SonicareViewByteInput);
+        break;
+    default:
+        break;
+    }
+}
+
 static uint32_t sonicare_prev_submenu(void* context) {
     UNUSED(context);
     return SonicareViewSubmenu;
+}
+
+// inputs reached via Advanced return there on Back
+static uint32_t sonicare_prev_advanced(void* context) {
+    UNUSED(context);
+    return SonicareViewAdvanced;
 }
 
 static bool sonicare_nav_cb(void* context) {
@@ -458,6 +530,7 @@ int32_t sonicare_app(void* p) {
 
     app->gui = furi_record_open(RECORD_GUI);
     app->storage = furi_record_open(RECORD_STORAGE);
+    app->dialogs = furi_record_open(RECORD_DIALOGS);
     app->notifications = furi_record_open(RECORD_NOTIFICATION);
     app->poller = sonicare_poller_alloc();
     app->timer = furi_timer_alloc(sonicare_timer_cb, FuriTimerTypePeriodic, app);
@@ -471,11 +544,21 @@ int32_t sonicare_app(void* p) {
     app->submenu = submenu_alloc();
     submenu_add_item(app->submenu, "Read brush head", SonicareMenuRead, sonicare_submenu_cb, app);
     submenu_add_item(app->submenu, "Reset to new", SonicareMenuReset, sonicare_submenu_cb, app);
-    submenu_add_item(app->submenu, "Set usage", SonicareMenuSetUsage, sonicare_submenu_cb, app);
-    submenu_add_item(app->submenu, "Password calc", SonicareMenuPwdCalc, sonicare_submenu_cb, app);
+    submenu_add_item(app->submenu, "Save", SonicareMenuSave, sonicare_submenu_cb, app);
+    submenu_add_item(app->submenu, "Restore", SonicareMenuRestore, sonicare_submenu_cb, app);
+    submenu_add_item(app->submenu, "Advanced", SonicareMenuAdvanced, sonicare_submenu_cb, app);
     submenu_add_item(app->submenu, "About", SonicareMenuAbout, sonicare_submenu_cb, app);
     view_dispatcher_add_view(
         app->view_dispatcher, SonicareViewSubmenu, submenu_get_view(app->submenu));
+
+    app->advanced = submenu_alloc();
+    submenu_add_item(
+        app->advanced, "Set usage", SonicareAdvSetUsage, sonicare_advanced_cb, app);
+    submenu_add_item(
+        app->advanced, "Password calc", SonicareAdvPwdCalc, sonicare_advanced_cb, app);
+    view_set_previous_callback(submenu_get_view(app->advanced), sonicare_prev_submenu);
+    view_dispatcher_add_view(
+        app->view_dispatcher, SonicareViewAdvanced, submenu_get_view(app->advanced));
 
     app->work = view_alloc();
     view_allocate_model(app->work, ViewModelTypeLocking, sizeof(SonicareWorkModel));
@@ -484,31 +567,18 @@ int32_t sonicare_app(void* p) {
     view_set_input_callback(app->work, sonicare_work_input);
     view_dispatcher_add_view(app->view_dispatcher, SonicareViewWork, app->work);
 
-    app->tuning = variable_item_list_alloc();
-    VariableItem* it = variable_item_list_add(
-        app->tuning, "Set to", SONICARE_USAGE_COUNT, sonicare_usage_change_cb, app);
-    variable_item_set_current_value_index(it, 0);
-    variable_item_set_current_value_text(it, "0%");
-    variable_item_list_set_enter_callback(app->tuning, sonicare_usage_enter_cb, app);
-    view_set_previous_callback(
-        variable_item_list_get_view(app->tuning), sonicare_prev_submenu);
+    app->number = number_input_alloc();
+    view_set_previous_callback(number_input_get_view(app->number), sonicare_prev_advanced);
     view_dispatcher_add_view(
-        app->view_dispatcher, SonicareViewTuning, variable_item_list_get_view(app->tuning));
+        app->view_dispatcher, SonicareViewNumber, number_input_get_view(app->number));
 
     app->byte_input = byte_input_alloc();
-    view_set_previous_callback(byte_input_get_view(app->byte_input), sonicare_prev_submenu);
+    view_set_previous_callback(byte_input_get_view(app->byte_input), sonicare_prev_advanced);
     view_dispatcher_add_view(
         app->view_dispatcher, SonicareViewByteInput, byte_input_get_view(app->byte_input));
 
     app->text_input = text_input_alloc();
-    text_input_set_result_callback(
-        app->text_input,
-        sonicare_text_input_done,
-        app,
-        app->calc_mfg,
-        sizeof(app->calc_mfg),
-        true);
-    view_set_previous_callback(text_input_get_view(app->text_input), sonicare_prev_submenu);
+    view_set_previous_callback(text_input_get_view(app->text_input), sonicare_prev_advanced);
     view_dispatcher_add_view(
         app->view_dispatcher, SonicareViewTextInput, text_input_get_view(app->text_input));
 
@@ -519,19 +589,22 @@ int32_t sonicare_app(void* p) {
     furi_timer_stop(app->timer);
     sonicare_poller_stop(app->poller);
     view_dispatcher_remove_view(app->view_dispatcher, SonicareViewSubmenu);
+    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewAdvanced);
     view_dispatcher_remove_view(app->view_dispatcher, SonicareViewWork);
-    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewTuning);
+    view_dispatcher_remove_view(app->view_dispatcher, SonicareViewNumber);
     view_dispatcher_remove_view(app->view_dispatcher, SonicareViewByteInput);
     view_dispatcher_remove_view(app->view_dispatcher, SonicareViewTextInput);
     submenu_free(app->submenu);
+    submenu_free(app->advanced);
     view_free(app->work);
-    variable_item_list_free(app->tuning);
+    number_input_free(app->number);
     byte_input_free(app->byte_input);
     text_input_free(app->text_input);
     view_dispatcher_free(app->view_dispatcher);
     furi_timer_free(app->timer);
     sonicare_poller_free(app->poller);
     furi_record_close(RECORD_NOTIFICATION);
+    furi_record_close(RECORD_DIALOGS);
     furi_record_close(RECORD_STORAGE);
     furi_record_close(RECORD_GUI);
     free(app);

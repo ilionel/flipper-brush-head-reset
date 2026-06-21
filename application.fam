@@ -3,7 +3,7 @@ App(
     name="Sonicare Reset",
     apptype=FlipperAppType.EXTERNAL,
     entry_point="sonicare_app",
-    requires=["gui", "notification"],
+    requires=["gui", "notification", "storage", "dialogs"],
     stack_size=4 * 1024,
     fap_category="NFC",
     fap_description="Read & reset the Philips Sonicare BrushSync (NTAG213) brush-head wear counter.",
