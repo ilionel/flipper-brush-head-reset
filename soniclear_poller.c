@@ -44,8 +44,10 @@ void soniclear_poller_free(SoniclearPoller* instance) {
     free(instance);
 }
 
-// Read identity (UID, MFG), the wear counter, and compute the password.
-static bool soniclear_read_identity(MfUltralightPoller* poller, SoniclearResult* r) {
+// Read identity (UID, MFG), the wear counter, and compute the password. When
+// `read_ndef` is set, also read the NDEF URL to recognise the head family; that is
+// skipped on the write path to keep the read->auth window (and coupling time) short.
+static bool soniclear_read_identity(MfUltralightPoller* poller, SoniclearResult* r, bool read_ndef) {
     MfUltralightPageReadCommandData d;
 
     // pages 0-3 -> UID (page0 bytes 0-2 + page1 bytes 0-3)
@@ -79,6 +81,7 @@ static bool soniclear_read_identity(MfUltralightPoller* poller, SoniclearResult*
     // from the model registry. Failures here never fail the identity read.
     r->brand = NULL;
     r->life_seconds = SONICLEAR_LIFE_SECONDS;
+    if(!read_ndef) return true;
     char ndef[32];
     memset(ndef, 0, sizeof(ndef));
     bool ndef_ok = true;
@@ -171,8 +174,9 @@ static NfcCommand soniclear_poller_callback(NfcGenericEventEx event, void* conte
     // Reads can also miss on transient coupling; retrying them is safe (no AUTHLIM
     // cost) and lets a write proceed once a clean identity read lands.
     bool got_id = false;
+    bool read_ndef = (instance->op == SoniclearOpRead); // skip NDEF on the write path
     for(int attempt = 0; attempt < SONICLEAR_AUTH_RETRIES; attempt++) {
-        if(soniclear_read_identity(poller, r)) {
+        if(soniclear_read_identity(poller, r, read_ndef)) {
             got_id = true;
             break;
         }
