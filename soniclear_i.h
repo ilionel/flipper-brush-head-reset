@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define SONICLEAR_VERSION "1.3"
+#define SONICLEAR_VERSION "1.4"
 
 // ~3-month rated life: 0x5460 = 21600 s = 180 x 2-min sessions, the wear total at
 // which a smart toothbrush handle starts asking for a replacement head.
@@ -12,10 +12,10 @@
 // NTAG213 page holding the wear counter (bytes 0-1 = brushing seconds LE16; 2-3 = 02 00).
 #define SONICLEAR_COUNTER_PAGE 36u
 
-// How many times to retry a PWD_AUTH that fails with a *transport* error (timeout /
-// lost coupling). Such failures never reach the tag, so retrying cannot advance the
-// AUTHLIM lockout counter. A real key rejection (the tag answered) is never retried.
-#define SONICLEAR_AUTH_RETRIES 6
+// How many times to retry the identity READ if it misses on transient coupling.
+// Reads never touch the AUTHLIM lockout counter, so retrying them is always safe.
+// The PWD_AUTH itself is never retried (it is sent exactly once).
+#define SONICLEAR_READ_RETRIES 6
 
 typedef enum {
     SoniclearOpRead, // read identity + counter, compute password (no write)

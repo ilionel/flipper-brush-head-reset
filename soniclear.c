@@ -319,10 +319,11 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
     // recognised family name if known, else the raw MFG code
     snprintf(line, sizeof(line), "%s  %u min", r->brand ? r->brand : r->mfg, r->seconds / 60u);
     canvas_draw_str(canvas, 2, 21, line);
-    // usage gauge with the (true) percentage printed at the right
-    soniclear_draw_bar(canvas, 2, 25, 100, 7, pct);
+    // usage gauge with the (true) percentage printed at the right. The bar is sized
+    // so a 3-digit percentage (e.g. 303%) still fits on screen.
+    soniclear_draw_bar(canvas, 2, 25, 86, 7, pct);
     snprintf(line, sizeof(line), "%u%%", real_pct);
-    canvas_draw_str(canvas, 107, 32, line);
+    canvas_draw_str(canvas, 92, 32, line);
     snprintf(
         line, sizeof(line), "PWD %02X%02X%02X%02X", r->pwd[0], r->pwd[1], r->pwd[2], r->pwd[3]);
     canvas_draw_str(canvas, 2, 44, line);
@@ -339,11 +340,9 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
             st = "Write failed";
             hint = "Hold still, retry";
         } else {
-            // auth failed: r->message tells coupling-loss apart from key rejection
+            // auth failed: password is correct by construction, so this is coupling
             st = r->message ? r->message : "Auth failed";
-            hint = (r->message && strcmp(r->message, "Password rejected") == 0) ?
-                       "Check UID/MFG" :
-                       "Hold still, retry";
+            hint = "Hold still, retry";
         }
         canvas_draw_str(canvas, 2, 55, st);
         if(hint) canvas_draw_str(canvas, 2, 63, hint);

@@ -102,10 +102,13 @@ static bool soniclear_read_identity(MfUltralightPoller* poller, SoniclearResult*
 }
 
 // Authenticate with the computed password and write the counter to `seconds`
-// (0 = brand-new). The password is computed (hence correct), and the only auth that
-// the tag actually processes is a single accepted one: transport failures (which the
-// tag never sees) may be retried, but a rejection is never retried, so the 3-attempt
-// permanent lockout can never be triggered.
+// (0 = brand-new). Exactly ONE PWD_AUTH is sent (it is the only lockout-sensitive
+// step). Success is `err == MfUltralightErrorNone`: the SDK function returns None
+// only when the tag answers with a 2-byte PACK, i.e. it accepted the password (it
+// does NOT set auth_context.auth_success for direct callers -- that field is filled
+// by the firmware's own poller wrapper, not by this function). A successful auth also
+// clears the tag's failed-attempt (AUTHLIM) counter. We never retry the auth, so the
+// 3-strikes permanent lock can never be reached.
 static void soniclear_write_counter(MfUltralightPoller* poller, SoniclearResult* r, uint16_t seconds) {
     r->did_write = true;
 
@@ -113,27 +116,14 @@ static void soniclear_write_counter(MfUltralightPoller* poller, SoniclearResult*
     memset(&auth, 0, sizeof(auth));
     memcpy(auth.password.data, r->pwd, 4);
 
-    // A transport error (timeout / lost coupling) means the PWD_AUTH exchange never
-    // completed, so the tag registered no wrong-password attempt and the AUTHLIM
-    // lockout counter is untouched. That makes it SAFE to retry the transport a few
-    // times while the head settles. We must NOT retry once the tag actually answers
-    // (auth_success == false) -- that is a real key rejection and would count toward
-    // the 3-strikes permanent lock.
-    MfUltralightError err = MfUltralightErrorNone;
-    for(int attempt = 0; attempt < SONICLEAR_AUTH_RETRIES; attempt++) {
-        err = mf_ultralight_poller_auth_pwd(poller, &auth);
-        if(err == MfUltralightErrorNone) break; // tag answered (accept or reject)
-        furi_delay_ms(40);
-    }
+    MfUltralightError err = mf_ultralight_poller_auth_pwd(poller, &auth);
     if(err != MfUltralightErrorNone) {
-        r->message = "No tag answer";
-        return;
-    }
-    if(!auth.auth_success) {
-        // The tag answered but rejected the key (this would count toward AUTHLIM).
-        // With a correctly computed password this should not happen unless the
-        // head's MFG layout differs from the known one.
-        r->message = "Password rejected";
+        // The password is computed (correct), so a failure here is almost always a
+        // coupling drop, not a real rejection. We do not retry the auth, so re-placing
+        // and trying again is safe. Timeout/NotPresent == the tag never answered.
+        r->message = (err == MfUltralightErrorTimeout || err == MfUltralightErrorNotPresent) ?
+                         "No tag answer" :
+                         "Auth failed";
         return;
     }
     r->auth_ok = true;
@@ -175,7 +165,7 @@ static NfcCommand soniclear_poller_callback(NfcGenericEventEx event, void* conte
     // cost) and lets a write proceed once a clean identity read lands.
     bool got_id = false;
     bool read_ndef = (instance->op == SoniclearOpRead); // skip NDEF on the write path
-    for(int attempt = 0; attempt < SONICLEAR_AUTH_RETRIES; attempt++) {
+    for(int attempt = 0; attempt < SONICLEAR_READ_RETRIES; attempt++) {
         if(soniclear_read_identity(poller, r, read_ndef)) {
             got_id = true;
             break;
