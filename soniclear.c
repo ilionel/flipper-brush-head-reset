@@ -13,6 +13,7 @@
 #include "soniclear_i.h"
 #include "soniclear_pwd.h"
 #include "soniclear_poller.h"
+#include "soniclear_models.h"
 
 // NTAG213 smart-toothbrush-head wear-counter tool.
 //
@@ -49,6 +50,7 @@ typedef enum {
     SoniclearAdvSetPct,
     SoniclearAdvSetMin,
     SoniclearAdvPwdCalc,
+    SoniclearAdvModels,
 } SoniclearAdvItem;
 
 typedef enum {
@@ -56,6 +58,7 @@ typedef enum {
     SoniclearScreenScanning, // talking to the tag
     SoniclearScreenResult, // NFC outcome
     SoniclearScreenPwdCalc, // manual password calculator result
+    SoniclearScreenModels, // known-families list
     SoniclearScreenAbout,
 } SoniclearScreen;
 
@@ -122,10 +125,17 @@ static void soniclear_draw_bar(Canvas* canvas, int x, int y, int w, int h, unsig
     if(fill > 0) canvas_draw_box(canvas, x + 1, y + 1, fill, h - 2);
 }
 
-// Seconds -> percent of rated life (capped at 100).
+// Seconds -> percent of the default rated life (capped at 100). Used for targets.
 static unsigned soniclear_pct(uint16_t seconds) {
     unsigned p = (100u * seconds) / SONICLEAR_LIFE_SECONDS;
     return p > 100u ? 100u : p;
+}
+
+// Seconds -> percent of a given family life. `cap` clamps to 100 (for the bar).
+static unsigned soniclear_pct_life(uint16_t seconds, uint16_t life, bool cap) {
+    if(life == 0) life = SONICLEAR_LIFE_SECONDS;
+    unsigned p = (100u * seconds) / life;
+    return (cap && p > 100u) ? 100u : p;
 }
 
 static void soniclear_work_draw(Canvas* canvas, void* model) {
@@ -173,6 +183,22 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
             m->calc_pwd[3]);
         canvas_draw_str(canvas, 2, 54, line);
         canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str(canvas, 110, 63, "Back");
+        return;
+    }
+
+    if(m->screen == SoniclearScreenModels) {
+        canvas_draw_str(canvas, 2, 11, "Known families");
+        canvas_set_font(canvas, FontSecondary);
+        size_t n = soniclear_brand_count();
+        int y = 25;
+        for(size_t i = 0; i < n && i < 4; i++) {
+            const SoniclearBrand* b = soniclear_brand_at(i);
+            snprintf(line, sizeof(line), "%s %umin", b->name, b->life_seconds / 60u);
+            canvas_draw_str(canvas, 2, y, line);
+            y += 11;
+        }
+        canvas_draw_str(canvas, 2, 63, "via NDEF URL");
         canvas_draw_str(canvas, 110, 63, "Back");
         return;
     }
@@ -272,7 +298,7 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
             sizeof(line),
             "Sec %u (%u%%)",
             r->seconds,
-            (100u * r->seconds) / SONICLEAR_LIFE_SECONDS);
+            soniclear_pct_life(r->seconds, r->life_seconds, false));
         canvas_draw_str(canvas, 2, 42, line);
         snprintf(
             line,
@@ -288,9 +314,10 @@ static void soniclear_work_draw(Canvas* canvas, void* model) {
         return;
     }
 
-    unsigned pct = soniclear_pct(r->seconds); // capped, for the bar fill
-    unsigned real_pct = (100u * r->seconds) / SONICLEAR_LIFE_SECONDS; // uncapped, for text
-    snprintf(line, sizeof(line), "%s  %u min", r->mfg, r->seconds / 60u);
+    unsigned pct = soniclear_pct_life(r->seconds, r->life_seconds, true); // bar (capped)
+    unsigned real_pct = soniclear_pct_life(r->seconds, r->life_seconds, false); // text
+    // recognised family name if known, else the raw MFG code
+    snprintf(line, sizeof(line), "%s  %u min", r->brand ? r->brand : r->mfg, r->seconds / 60u);
     canvas_draw_str(canvas, 2, 21, line);
     // usage gauge with the (true) percentage printed at the right
     soniclear_draw_bar(canvas, 2, 25, 100, 7, pct);
@@ -656,6 +683,11 @@ static void soniclear_advanced_cb(void* context, uint32_t index) {
             app->number, soniclear_number_done, app, 0, 0, SONICLEAR_MAX_MIN);
         view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewNumber);
         break;
+    case SoniclearAdvModels:
+        with_view_model(
+            app->work, SoniclearWorkModel * m, { m->screen = SoniclearScreenModels; }, true);
+        view_dispatcher_switch_to_view(app->view_dispatcher, SoniclearViewWork);
+        break;
     case SoniclearAdvPwdCalc:
         // prefill the UID from the last read (incl. unknown-layout tags) for convenience
         if(app->result.present) {
@@ -725,6 +757,7 @@ int32_t soniclear_app(void* p) {
     submenu_add_item(app->advanced, "Set usage min", SoniclearAdvSetMin, soniclear_advanced_cb, app);
     submenu_add_item(
         app->advanced, "Password calc", SoniclearAdvPwdCalc, soniclear_advanced_cb, app);
+    submenu_add_item(app->advanced, "Models", SoniclearAdvModels, soniclear_advanced_cb, app);
     view_set_previous_callback(submenu_get_view(app->advanced), soniclear_prev_submenu);
     view_dispatcher_add_view(
         app->view_dispatcher, SoniclearViewAdvanced, submenu_get_view(app->advanced));

@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define SONICLEAR_VERSION "1.2"
+#define SONICLEAR_VERSION "1.3"
 
 // ~3-month rated life: 0x5460 = 21600 s = 180 x 2-min sessions, the wear total at
 // which a smart toothbrush handle starts asking for a replacement head.
@@ -29,6 +29,8 @@ typedef struct {
     uint8_t uid[7];
     char mfg[11]; // 10 ASCII chars + NUL
     uint8_t pwd[4]; // computed PWD_AUTH key
+    const char* brand; // recognised family name (from the model registry), or NULL
+    uint16_t life_seconds; // rated brushing life for this head (family-specific)
     uint16_t seconds; // brushing seconds used (after a write, the written value)
     bool did_write; // a write (reset/set) was attempted
     bool auth_ok;

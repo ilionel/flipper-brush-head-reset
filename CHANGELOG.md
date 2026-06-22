@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3
+- Model/brand registry (`soniclear_models.c`): the head's NDEF URL is read and
+  matched against a table of known families, so a recognised head shows its
+  family name (e.g. "Sonicare BrushSync") and the usage % uses that family's
+  rated life. Unknown heads fall back to the raw MFG code.
+- Advanced -> **Models** lists the known families. The table is easy to extend
+  with new brands (a unique NDEF-URL substring + name + rated life).
+
 ## 1.2
 - Confirmation screen before every write (Reset / Set usage / Restore), showing
   the target as % and minutes; confirm before placing the head so the whole

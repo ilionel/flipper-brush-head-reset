@@ -10,6 +10,7 @@
 
 #include "soniclear_poller.h"
 #include "soniclear_pwd.h"
+#include "soniclear_models.h"
 
 #include <furi.h>
 #include <string.h>
@@ -73,6 +74,27 @@ static bool soniclear_read_identity(MfUltralightPoller* poller, SoniclearResult*
     r->valid = (d.page[3].data[2] == 0x02) && (d.page[3].data[3] == 0x00);
 
     soniclear_pwd_compute(r->uid, mfg, sizeof(mfg), r->pwd);
+
+    // Best-effort: read the NDEF URL (pages 4-11) and recognise the head family
+    // from the model registry. Failures here never fail the identity read.
+    r->brand = NULL;
+    r->life_seconds = SONICLEAR_LIFE_SECONDS;
+    char ndef[32];
+    memset(ndef, 0, sizeof(ndef));
+    bool ndef_ok = true;
+    if(mf_ultralight_poller_read_page(poller, 4, &d) == MfUltralightErrorNone) {
+        for(int i = 0; i < 4; i++) memcpy(ndef + i * 4, d.page[i].data, 4);
+    } else {
+        ndef_ok = false;
+    }
+    if(ndef_ok && mf_ultralight_poller_read_page(poller, 8, &d) == MfUltralightErrorNone) {
+        for(int i = 0; i < 4; i++) memcpy(ndef + 16 + i * 4, d.page[i].data, 4);
+        const SoniclearBrand* b = soniclear_identify_brand(ndef, sizeof(ndef));
+        if(b) {
+            r->brand = b->name;
+            r->life_seconds = b->life_seconds;
+        }
+    }
     return true;
 }
 

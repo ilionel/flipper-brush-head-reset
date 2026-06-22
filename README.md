@@ -24,15 +24,26 @@ when to nag you for a replacement. This app reads that page, shows the usage, an
 with the head's own per-head password — can write it back to a value of your choice
 (0 = brand new).
 
-- **Read brush head** — model code, a usage gauge (% and minutes) and the computed
-  password. Press **Right** for a detail page (UID, MFG, raw seconds, PWD); **OK** saves
-  the read to the SD card.
+- **Read brush head** — the recognised family name (or the raw model code), a usage
+  gauge (% and minutes) and the computed password. Press **Right** for a detail page
+  (UID, MFG, raw seconds, PWD); **OK** saves the read to the SD card.
 - **Reset to new** — set the counter back to 0%.
 - **Save / Restore** — store a read to the SD card and write it back later.
 - **Advanced**
   - **Set usage %** / **Set usage min** — write any target you want.
   - **Password calc** — compute a head's password from its UID + MFG code (offline).
+  - **Models** — list the brush-head families the app recognises.
 - **About**.
+
+### Model / brand database
+
+Each head stores an NDEF URL identifying its ecosystem. On a read, the app matches
+that URL against a small registry (`soniclear_models.c`) to show the **family name**
+(e.g. *Sonicare BrushSync*) and to use that family's **rated life** for an accurate
+usage percentage. Unknown heads still work and show their raw MFG code.
+
+Adding a brand is one table row — a unique substring of its NDEF URL, a friendly
+name and the rated brushing life in seconds. Contributions welcome.
 
 Every write (Reset / Set usage / Restore) first shows a **confirmation screen** with the
 target value; you confirm *before* placing the head, then make a single still placement
