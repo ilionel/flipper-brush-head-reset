@@ -22,7 +22,7 @@ Grab the `.fap` for your firmware from the [**latest release**](../../releases/l
 `official-release`, `official-dev`, `unleashed` or `momentum` — copy it to
 `SD Card / apps / NFC` (via [qFlipper](https://docs.flipper.net/qflipper) or the SD card),
 then open **Apps → NFC → Brush Head Reset**. A step-by-step project page is published with
-GitHub Pages from [`docs/`](docs/) (URL: `https://<user>.github.io/<repo>/`).
+GitHub Pages from [`docs/`](docs/) (URL: `https://github.com/ilionel/flipper-brush-head-reset/blob/master/docs`).
 
 ## What it does
 
