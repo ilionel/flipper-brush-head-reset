@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brush Head Reset — Flipper Zero</title>
+<meta name="description" content="A Flipper Zero app to read and reset the NTAG213 wear counter on smart toothbrush heads you own. Independent, unofficial." />
+<style>
+  :root { --bg:#0e0f13; --card:#171922; --fg:#e8e9ee; --muted:#9aa0ad; --accent:#ff8200; --line:#262936; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .wrap { max-width:880px; margin:0 auto; padding:0 20px; }
+  header { text-align:center; padding:64px 20px 40px; border-bottom:1px solid var(--line); }
+  h1 { font-size:2.4rem; margin:0 0 8px; }
+  .tag { color:var(--muted); font-size:1.15rem; margin:0 auto 28px; max-width:560px; }
+  .btns { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .btn { display:inline-block; padding:11px 20px; border-radius:10px; font-weight:600; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  .btn.primary { background:var(--accent); color:#1a1206; border-color:var(--accent); }
+  section { padding:44px 0; border-bottom:1px solid var(--line); }
+  h2 { font-size:1.5rem; margin:0 0 18px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h3 { margin:0 0 6px; font-size:1.05rem; }
+  .card p { margin:0; color:var(--muted); font-size:.95rem; }
+  ol { padding-left:22px; } li { margin:8px 0; }
+  code { background:#000; border:1px solid var(--line); border-radius:6px; padding:2px 6px; font-size:.9em; }
+  .note { background:#1d150a; border:1px solid #43300f; border-radius:10px; padding:14px 16px; color:#f3d9b0; font-size:.95rem; }
+  footer { text-align:center; color:var(--muted); padding:32px 20px 64px; font-size:.9rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>🪥 Brush Head Reset</h1>
+    <p class="tag">A <strong>Flipper Zero</strong> app to read and reset the wear counter stored on the NTAG213 chip inside many smart toothbrush heads — so you can keep using a head you judge still good, instead of binning it on a fixed timer. For heads <strong>you own</strong>.</p>
+    <div class="btns">
+      <a class="btn primary" id="dl" href="#install">⬇ Download .fap</a>
+      <a class="btn" id="gh" href="#">Source on GitHub</a>
+      <a class="btn" id="map" href="#">Tag memory map</a>
+    </div>
+  </div>
+</header>
+
+<section><div class="wrap">
+  <h2>What it does</h2>
+  <div class="grid">
+    <div class="card"><h3>Read</h3><p>Model name, usage gauge (% and minutes) and the per-head password — computed from the tag, never guessed.</p></div>
+    <div class="card"><h3>Reset to new</h3><p>Sets the brushing counter back to 0%. Set any usage value, or save &amp; restore a head's state.</p></div>
+    <div class="card"><h3>Head fields</h3><p>Decodes the on-tag data: model/type, rated life (months), last intensity &amp; brush mode, security config.</p></div>
+    <div class="card"><h3>Lock probe</h3><p>Non-destructive map of which pages are writable vs factory-locked — write-back-identical, nothing is altered.</p></div>
+  </div>
+</div></section>
+
+<section id="install"><div class="wrap">
+  <h2>Install</h2>
+  <ol>
+    <li><a id="rel" href="#">Open the latest release</a> and download the <code>.fap</code> matching your firmware:
+      <br><code>brush_reset-official-release.fap</code>, <code>…-official-dev.fap</code>, <code>…-unleashed.fap</code> or <code>…-momentum.fap</code>.</li>
+    <li>Connect your Flipper and open <a href="https://lab.flipper.net/">qFlipper</a> (or the SD card directly).</li>
+    <li>Copy the <code>.fap</code> into <code>SD&nbsp;Card / apps / NFC</code>.</li>
+    <li>On the Flipper: <strong>Apps → NFC → Brush Head Reset</strong>.</li>
+    <li>Pop the head off the handle, lay its <strong>base flat on the back of the Flipper</strong>, hold still, and pick an action.</li>
+  </ol>
+  <p class="note">The head's coil is tiny — stable coupling matters, especially for a write. Transient drops are retried automatically; a write is lockout-safe (the password is computed and sent once, so the tag's 3-strikes permanent lock is never reachable).</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p>Each head carries an <strong>NTAG213</strong> NFC tag. One page holds the accumulated brushing time in seconds; the handle reads it to decide when to nag for a replacement. With the head's own per-head password (derived from its UID + factory code) the app writes that page back to a value of your choice. The full reverse-engineered layout — every page, field encoding, lock bit and the password algorithm — is in the <a id="map2" href="#">tag memory map</a>.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Not affiliated</h2>
+  <p style="color:var(--muted)">Independent, unofficial project. Not affiliated with, authorized, sponsored or endorsed by Koninklijke Philips N.V. "Philips", "Sonicare" and "BrushSync" are trademarks of their respective owners, used here only nominatively to describe compatibility. No firmware, artwork or logo of any manufacturer is included. Provided "as is", for personal use on hardware you own, for interoperability, repair and educational purposes.</p>
+</div></section>
+
+<footer>
+  <span id="foot">MIT licensed · Independent project</span>
+</footer>
+
+<script>
+  // Derive owner/repo from the GitHub Pages URL so the links work without editing.
+  (function () {
+    var host = location.hostname, parts = location.pathname.split('/').filter(Boolean);
+    var owner = host.endsWith('github.io') ? host.split('.')[0] : null;
+    var repo = parts.length ? parts[0] : null;
+    if (owner && repo) {
+      var base = 'https://github.com/' + owner + '/' + repo;
+      document.getElementById('gh').href = base;
+      document.getElementById('rel').href = base + '/releases/latest';
+      document.getElementById('dl').href = base + '/releases/latest';
+      document.getElementById('map').href = base + '/blob/master/MEMORY_MAP.md';
+      document.getElementById('map2').href = base + '/blob/master/MEMORY_MAP.md';
+      document.getElementById('foot').innerHTML = 'MIT licensed · <a href="' + base + '">' + owner + '/' + repo + '</a>';
+    }
+  })();
+</script>
+</body>
+</html>

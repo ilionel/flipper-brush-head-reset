@@ -7,6 +7,8 @@
 // substring of the head's on-tag URL, which is what the brush handle reads.
 //
 // Philips Sonicare BrushSync heads carry "https://philips.com/nfcbrushheadtap".
+// "Philips", "Sonicare" and "BrushSync" are trademarks of their respective owners,
+// used here only nominatively to describe compatibility (see README disclaimer).
 // To add another brand: capture a head's NDEF URL, pick a unique substring, and
 // add a row with a friendly name and the rated brushing life (in seconds).
 static const SoniclearBrand k_brands[] = {
@@ -34,6 +36,38 @@ const SoniclearBrand* soniclear_identify_brand(const char* ndef_ascii, size_t le
         }
     }
     return NULL;
+}
+
+// Brush-head type byte (page 0x1F byte 2) -> model name. Index = type value (0x01-0x16).
+// Names condensed to fit the Flipper screen (W = White, B = Black). Source: mbirth RE.
+static const char* const k_head_types[] = {
+    [0x01] = "Prem Plaque Def W",
+    [0x02] = "Prem Plaque Def B",
+    [0x03] = "Prem Gum Care W",
+    [0x04] = "Prem Gum Care B",
+    [0x05] = "Prem White W",
+    [0x06] = "Prem White B",
+    [0x07] = "Opt Plaque Def W",
+    [0x08] = "Opt Gum Care W",
+    [0x09] = "Opt White W",
+    [0x0A] = "Opt White B",
+    [0x0B] = "Opt White sm W",
+    [0x0C] = "InterCare W",
+    [0x0D] = "InterCare sm W",
+    [0x0E] = "TongueCare+ W",
+    [0x0F] = "TongueCare+ B",
+    [0x10] = "Prem All-in-One W",
+    [0x11] = "Prem All-in-One B",
+    [0x12] = "SimplyClean W",
+    [0x13] = "ProResults W",
+    [0x14] = "Sensitive W",
+    [0x15] = "Sensitive B",
+    [0x16] = "Gentle Clean W",
+};
+
+const char* soniclear_head_type_name(uint8_t type) {
+    if(type >= (sizeof(k_head_types) / sizeof(k_head_types[0]))) return NULL;
+    return k_head_types[type]; // NULL for 0x00 and any gap
 }
 
 size_t soniclear_brand_count(void) {

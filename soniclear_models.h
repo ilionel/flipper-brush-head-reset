@@ -21,6 +21,10 @@ typedef struct {
 // Returns the matched brand, or NULL if unrecognised.
 const SoniclearBrand* soniclear_identify_brand(const char* ndef_ascii, size_t len);
 
+// Map the brush-head type byte (page 0x1F byte 2, values 0x01-0x16) to a model name,
+// or NULL if out of range. Table from mbirth's 2026-03 reverse-engineering.
+const char* soniclear_head_type_name(uint8_t type);
+
 // Enumeration helpers for the on-device "Models" list.
 size_t soniclear_brand_count(void);
 const SoniclearBrand* soniclear_brand_at(size_t i);

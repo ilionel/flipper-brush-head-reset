@@ -1,8 +1,14 @@
 .ufbt/
 dist/
 build/
+out/
 .vscode/
 *_d.elf
+*.fap
 __pycache__/
 *.pyc
 test/test_pwd
+
+# never commit real head dumps / records (personal UID / MFG / password)
+*.nfc
+*.soniclear

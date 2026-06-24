@@ -1,0 +1,77 @@
+name: Build FAP
+
+# Builds the .fap against the main Flipper firmwares with ufbt. On a version tag (vX.Y)
+# the per-firmware .faps are attached to a GitHub Release.
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: official-release
+            update: ufbt update --channel release
+          - name: official-dev
+            update: ufbt update --channel dev
+          - name: unleashed
+            update: ufbt update --index-url https://up.unleashedflip.com/directory.json --channel release
+          - name: momentum
+            update: ufbt update --index-url https://up.momentum-fw.dev/firmware/directory.json --channel release
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ufbt
+        run: pip install --upgrade ufbt
+
+      - name: Fetch SDK (${{ matrix.name }})
+        run: ${{ matrix.update }}
+
+      - name: Build
+        run: ufbt
+
+      - name: Stage artifact
+        run: |
+          mkdir -p out
+          cp dist/*.fap "out/brush_reset-${{ matrix.name }}.fap"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brush_reset-${{ matrix.name }}
+          path: out/*.fap
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect .faps
+        run: |
+          mkdir -p release
+          find artifacts -name '*.fap' -exec cp {} release/ \;
+          ls -l release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.fap
+          generate_release_notes: true

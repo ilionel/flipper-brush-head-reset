@@ -7,8 +7,8 @@ password algorithm was reverse-engineered by @ATC1441 (Aaron Christophel) and
 is verified against real heads; it depends only on the head (UID + MFG code),
 not the handle.
 
-Reset = authenticate with PWD, then write page 0x24 (36) = `00 00 02 00`
-(counter -> 0).
+Reset = authenticate with PWD, then write page 0x24 (36) bytes 0-1 = 00 00
+(counter -> 0), preserving bytes 2-3 (last-session intensity + brush mode).
 
 Examples:
     soniclear.py dump.nfc                  # a Flipper NFC dump (.nfc)
@@ -82,16 +82,31 @@ def mfg_from_pages(pages):
     return raw[2:12]
 
 
-def report(uid, mfg, seconds, raw_page=None):
+def report(uid, mfg, seconds, raw_page=None, life=LIFE, family=None):
     pwd = gen_pwd(uid, mfg)
     print(f'UID    : {" ".join("%02X" % b for b in uid)}')
     print(f'MFG    : {bytes(mfg).decode(errors="replace")!r}')
     print(f"PWD    : {pwd}    (PWD_AUTH key)")
+    if family:
+        print(f"Family : {family}")
     if seconds is not None:
-        pct = 100 * seconds / LIFE
+        pct = 100 * seconds / life
+        # name the basis of the percentage so it matches the device's family-aware %
+        life_txt = "~3-month life" if life == LIFE else f"{life // 60}-min rated life"
         extra = f'  raw {" ".join("%02X" % b for b in raw_page)}' if raw_page else ""
-        print(f"Used   : {seconds} s = {seconds/60:.0f} min, {pct:.0f}% of ~3-month life{extra}")
-    print(f"Reset  : write page {COUNTER_PAGE} = 00 00 02 00  (auth with PWD {pwd})")
+        print(f"Used   : {seconds} s = {seconds/60:.0f} min, {pct:.0f}% of {life_txt}{extra}")
+    # page 36 bytes 2-3 are the last session's intensity (0=Low/1=Med/2=High) and brush
+    # mode (0..4); they are NOT a fixed frame, so a reset must preserve them.
+    if raw_page and len(raw_page) >= 4:
+        inten = ["Low", "Med", "High"]
+        modes = ["Clean", "White+", "Gum", "DeepClean+", "Sensitive"]
+        b2, b3 = raw_page[2], raw_page[3]
+        i_txt = inten[b2] if b2 < len(inten) else "?"
+        m_txt = modes[b3] if b3 < len(modes) else "?"
+        print(f"Session: intensity {b2} ({i_txt}), mode {b3} ({m_txt})")
+        print(f"Reset  : write page {COUNTER_PAGE} = 00 00 {b2:02X} {b3:02X}  (keep b2-3; auth PWD {pwd})")
+    else:
+        print(f"Reset  : write page {COUNTER_PAGE} = 00 00 <keep b2-3>  (auth with PWD {pwd})")
     return pwd
 
 
@@ -130,7 +145,8 @@ def main():
             uid = _hexbytes(rec["UID"])
             mfg = list(rec["MFG"].encode())
             seconds = int(rec["Seconds"]) if "Seconds" in rec else None
-            report(uid, mfg, seconds)
+            life = int(rec["Life"]) if rec.get("Life") else LIFE
+            report(uid, mfg, seconds, life=life, family=rec.get("Family"))
             if rec.get("Date"):
                 print(f'Saved  : {rec["Date"]}')
             return

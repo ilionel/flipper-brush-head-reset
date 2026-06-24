@@ -16,6 +16,14 @@ timer. Use it only on brush heads **you own**.
 > tool is compatible with. No Philips firmware, artwork, or logo is included or
 > distributed.
 
+## Install (pre-built)
+
+Grab the `.fap` for your firmware from the [**latest release**](../../releases/latest) —
+`official-release`, `official-dev`, `unleashed` or `momentum` — copy it to
+`SD Card / apps / NFC` (via [qFlipper](https://docs.flipper.net/qflipper) or the SD card),
+then open **Apps → NFC → Brush Head Reset**. A step-by-step project page is published with
+GitHub Pages from [`docs/`](docs/) (URL: `https://<user>.github.io/<repo>/`).
+
 ## What it does
 
 Smart brush heads carry a tiny **NTAG213** NFC tag (NfcA, 13.56 MHz). One page
@@ -56,16 +64,20 @@ tag's 3-failed-attempts permanent lockout can't be triggered by normal use.
 
 ## How the counter is encoded
 
-Reverse-engineered from real heads (no proprietary code used):
+Reverse-engineered from real heads (no proprietary code used). The **full page-by-page
+layout, field encodings and lock structure are in [MEMORY_MAP.md](MEMORY_MAP.md)**; the
+essentials:
 
 | Item | Detail |
 |------|--------|
 | Tag | NTAG213, 7-byte UID, 45 pages |
-| Counter | page `0x24`, bytes 0-1 = brushing **seconds**, little-endian 16-bit; bytes 2-3 = `02 00` (frame, preserved) |
-| Fresh head | `00 00 02 00` (counter 0) |
-| "Replace" threshold | ~`0x5460` = 21600 s = 180 × 2-min sessions ≈ 3 months |
+| Counter | page `0x24`, bytes 0-1 = brushing **seconds**, little-endian 16-bit |
+| Page 0x24 bytes 2-3 | last-session **intensity** + **brush mode** (data, preserved on write — not a fixed frame) |
+| Fresh head | counter `00 00` (bytes 2-3 left as-is) |
+| "Replace" threshold | rated life at page `0x21` = ~`0x5460` = 21600 s = 180 × 2-min sessions ≈ 3 months |
+| Model | page `0x1F` byte 2 = brush-head **type** (`0x01–0x16`) |
 | Checksum | none on the counter |
-| Protection | pages ≥ 16 are password-write-protected (`AUTH0`), `AUTHLIM = 3` |
+| Protection | pages ≥ 16 are password-write-protected (`AUTH0`), `AUTHLIM = 3`; identity/life block (32-35) and NDEF (4-15) are **locked** |
 
 The per-head password is derived from the UID and the factory MFG string with a pair
 of CRC16-CCITT passes (algorithm credit: [@ATC1441](https://github.com/atc1441)). It
