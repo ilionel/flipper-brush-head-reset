@@ -72,12 +72,27 @@
 </div></section>
 
 <section><div class="wrap">
+  <h2>Acknowledgements</h2>
+  <div class="card">
+    <p style="margin-top:0">This project stands on prior open reverse-engineering work — with thanks to:</p>
+    <ul style="margin-bottom:0">
+      <li><a href="https://kuenzi.dev/toothbrush/">Cyrill Künzi</a> — original teardown and password sniffing.</li>
+      <li><a href="https://github.com/atc1441">Aaron Christophel (@ATC1441)</a> — the password algorithm.</li>
+      <li><a href="https://blog.mbirth.uk/2026/03/29/sonicare-brush-head-nfc-data.html">mbirth</a> — detailed NFC field mapping (type table, intensity/mode).</li>
+      <li><a href="https://nfc.cool/blog/reset-sonicare-brush-head-nfc/">nfc.cool</a> — reset write-up.</li>
+      <li><a href="https://github.com/nicjes/SonicareGenerator">nicjes/SonicareGenerator</a> — web password generator.</li>
+      <li><a href="https://www.nxp.com/docs/en/data-sheet/NTAG213_215_216.pdf">NXP NTAG213 datasheet</a> — memory &amp; lock-byte structure.</li>
+    </ul>
+  </div>
+</div></section>
+
+<section><div class="wrap">
   <h2>Not affiliated</h2>
   <p style="color:var(--muted)">Independent, unofficial project. Not affiliated with, authorized, sponsored or endorsed by Koninklijke Philips N.V. "Philips", "Sonicare" and "BrushSync" are trademarks of their respective owners, used here only nominatively to describe compatibility. No firmware, artwork or logo of any manufacturer is included. Provided "as is", for personal use on hardware you own, for interoperability, repair and educational purposes.</p>
 </div></section>
 
 <footer>
-  <span id="foot">MIT licensed · Independent project</span>
+  <span id="foot">GPL-2.0 licensed · Independent project</span>
 </footer>
 
 <script>
@@ -93,7 +108,7 @@
       document.getElementById('dl').href = base + '/releases/latest';
       document.getElementById('map').href = base + '/blob/master/MEMORY_MAP.md';
       document.getElementById('map2').href = base + '/blob/master/MEMORY_MAP.md';
-      document.getElementById('foot').innerHTML = 'MIT licensed · <a href="' + base + '">' + owner + '/' + repo + '</a>';
+      document.getElementById('foot').innerHTML = 'GPL-2.0 licensed · <a href="' + base + '">' + owner + '/' + repo + '</a>';
     }
   })();
 </script>

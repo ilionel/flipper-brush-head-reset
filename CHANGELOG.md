@@ -149,7 +149,7 @@
 
 ## 1.1
 - Single-session writes (read → auth → write in one placement).
-- Trademark-safe packaging: neutral naming, README disclaimer, MIT license.
+- Trademark-safe packaging: neutral naming, README disclaimer, open-source license.
 
 ## 1.0
 - Initial Flipper app: read & reset the NTAG213 brush-head wear counter,

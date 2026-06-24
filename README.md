@@ -138,4 +138,17 @@ auth resets that counter. This app is built so the limit is never reachable:
 Provided "as is", for personal use on hardware you own, for interoperability,
 repair and educational purposes. You are responsible for complying with your local
 laws and any applicable terms. The authors accept no liability for damage to tags,
-devices, or anything else. See [LICENSE](LICENSE).
+devices, or anything else.
+
+## License
+
+**GPL-2.0** — see [LICENSE](LICENSE). Copyright (C) 2026 lionel.
+
+## Acknowledgements
+
+Builds on prior open reverse-engineering: [Cyrill Künzi](https://kuenzi.dev/toothbrush/)
+(teardown + password sniffing), [Aaron Christophel / @ATC1441](https://github.com/atc1441)
+(password algorithm), [mbirth](https://blog.mbirth.uk/2026/03/29/sonicare-brush-head-nfc-data.html)
+(NFC field mapping), [nfc.cool](https://nfc.cool/blog/reset-sonicare-brush-head-nfc/),
+[nicjes/SonicareGenerator](https://github.com/nicjes/SonicareGenerator), and the
+[NXP NTAG213 datasheet](https://www.nxp.com/docs/en/data-sheet/NTAG213_215_216.pdf).
