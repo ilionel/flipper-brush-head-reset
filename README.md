@@ -142,7 +142,7 @@ devices, or anything else.
 
 ## License
 
-**GPL-2.0** — see [LICENSE](LICENSE). Copyright (C) 2026 lionel.
+**GPL-3.0** — see [LICENSE](LICENSE). Copyright (C) 2026 lionel.
 
 ## Acknowledgements
 
